@@ -29,8 +29,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from mmgp import offload
 import uuid
-import webbrowser
-from threading import Timer
+from hy3dgen.monitoring import get_system_metrics
 
 from hy3dgen.shapegen.utils import logger as _shapegen_logger
 
@@ -663,6 +662,12 @@ def build_app():
             inputs=[file_out, file_out2, file_type, reduce_face, export_texture, target_face_num],
             outputs=[html_export_mesh, file_export]
         )
+
+            
+        with gr.Row():
+            with gr.Accordion("System Monitor", open=False):
+                system_stats = gr.Json(label="System Metrics")
+                gr.Timer(2.0).tick(get_system_metrics, outputs=[system_stats])
 
     return demo
 

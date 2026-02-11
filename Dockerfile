@@ -1,9 +1,9 @@
-FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04 AS base
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-# System dependencies
+# System dependencies (including git for cloning/dev and python3-dev for headers)
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
@@ -12,38 +12,37 @@ RUN apt-get update && apt-get install -y \
     wget \
     libgl1-mesa-glx \
     libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender1 \
+    ninja-build \
     && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
 
 # Upgrade pip
 RUN pip3 install --no-cache-dir --upgrade pip
 
-WORKDIR /app
-
-# Install Python dependencies first (better layer caching)
+# Install build dependencies (torch for C++ extension compilation)
+# Note: requirements.txt installs torch, so this is handled below.
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
 
-# Install the hy3dgen package
-RUN pip3 install --no-cache-dir -e .
+# Install the hy3dgen package (triggers custom_rasterizer build)
+# Using standard install (not editable) for cleaner container image
+RUN pip3 install --no-cache-dir .
 
-# Create directories
+# Create directories and set permissions if needed
 RUN mkdir -p /app/logs /app/gradio_cache
 
 # Expose ports
-# 8080 = Gradio UI, 8081 = API Server
 EXPOSE 8080 8081
 
 # Default to Gradio app
 ENV APP_MODE=gradio
 ENV EXTRA_ARGS=""
 
-# Use a shell entrypoint to support mode switching
+# Entrypoint script logic inline
 ENTRYPOINT ["/bin/bash", "-c"]
 CMD ["if [ \"$APP_MODE\" = 'api' ]; then \
        python3 api_server.py --host 0.0.0.0 --port 8081 $EXTRA_ARGS; \

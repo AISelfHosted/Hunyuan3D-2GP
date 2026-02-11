@@ -205,28 +205,39 @@ You may follow the next steps to use Hunyuan3D 2.0 via:
 - [Blender Addon](#blender-addon)
 - [Official Site](#official-site)
 
-### Install Requirements
-To use the application on Windows (without WSL) you will need to install Microsoft Visual Studio 2022 or later. If you get an error during the execution of onr of the *python setup.py* below you will need to set the path to the C++ compiler by running the following script (once you have located the installation path of VS Studio which may differ):
+### Installation
+
+#### Automated Installation (Recommended)
+
+Simply run the included installer script. It handles virtual environment creation, dependencies, and compiling the custom texture engine:
+
 ```bash
-"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd" -arch=x64 
+python3 install.py
 ```
 
+After installation completes, activate the environment:
 
-In any case please make sure you have Python 3.10 installed, you may create a conda environnment: 
 ```bash
-conda create -n Hunyuan3D-2GP python==3.10.9 
+source .venv/bin/activate
 ```
-Then install the required libraries:
+
+#### Manual Installation
+
+If you prefer to manage your own environment (e.g., Conda):
+
 ```bash
+# 1. Create environment (Python 3.10 recommended)
+conda create -n Hunyuan3D-2GP python==3.10.9
+conda activate Hunyuan3D-2GP
+
+# 2. Install PyTorch (adjust CUDA version if needed)
 pip install torch==2.5.1 torchvision torchaudio --index-url https://download.pytorch.org/whl/test/cu124
-pip install -r requirements.txt
-# for texture
-cd hy3dgen/texgen/custom_rasterizer
-python3 setup.py install
-cd ../../..
-cd hy3dgen/texgen/differentiable_renderer
-python3 setup.py install
+
+# 3. Install the package (This automatically builds the C++ extensions)
+pip install -e .
 ```
+
+> **Note for Windows Users**: Ensure you have Visual Studio 2022 (with "Desktop development with C++") installed before running the installation, as `cl.exe` is required for compilation.
 
 ### Code Usage
 
