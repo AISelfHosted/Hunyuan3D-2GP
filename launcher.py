@@ -36,13 +36,13 @@ from hy3dgen.shapegen.utils import logger as _shapegen_logger
 import logging
 import logging.handlers
 
-# --- Unified logging for Gradio app ---
+# --- Unified logging for Archeon Launcher ---
 _XDG_CACHE = os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache'))
 _XDG_STATE = os.environ.get('XDG_STATE_HOME', os.path.expanduser('~/.local/state'))
 _LOG_DIR = os.path.join(_XDG_STATE, 'hy3dgen')
 os.makedirs(_LOG_DIR, exist_ok=True)
 
-logger = logging.getLogger('hy3dgen.gradio')
+logger = logging.getLogger('hy3dgen.launcher')
 logger.setLevel(logging.INFO)
 _formatter = logging.Formatter(
     fmt='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
@@ -52,7 +52,7 @@ _console_h = logging.StreamHandler()
 _console_h.setFormatter(_formatter)
 logger.addHandler(_console_h)
 _file_h = logging.handlers.TimedRotatingFileHandler(
-    os.path.join(_LOG_DIR, 'gradio_app.log'), when='D', utc=True, encoding='UTF-8',
+    os.path.join(_LOG_DIR, 'launcher.log'), when='D', utc=True, encoding='UTF-8',
 )
 _file_h.setFormatter(_formatter)
 logger.addHandler(_file_h)
@@ -153,10 +153,6 @@ def build_model_viewer_html(save_folder, height=660, width=790, textured=False):
     print(
         f'Find html file {output_html_path}, {os.path.exists(output_html_path)}, relative HTML path is /static/{rel_path}')
 
-    # html_path = '/'.join(Path(output_html_path).parts[1:])
-    # iframe_tag = f'<iframe src="/static/{html_path}" height="{height}" width="100%" frameborder="0"></iframe>'
-    # print(f'Find html {output_html_path}, {os.path.exists(output_html_path)}')
-
     return f"""
         <div style='height: {height}; width: 100%;'>
         {iframe_tag}
@@ -221,11 +217,9 @@ def _gen_shape(
         try:
             image = t2i_worker(caption)
         except Exception as e:
-            raise gr.Error(f"Text to 3D is disable. Please enable it by `python gradio_app.py --enable_t23d`.")
+            raise gr.Error(f"Text to 3D is disable. Please enable it by `python launcher.py --enable_t23d`.")
         time_meta['text2image'] = time.time() - start_time
 
-    # remove disk io to make responding faster, uncomment at your will.
-    # image.save(os.path.join(save_folder, 'input.png'))
     if MV_MODE:
         start_time = time.time()
         for k, v in image.items():
@@ -239,10 +233,6 @@ def _gen_shape(
             image = rmbg_worker(image.convert('RGB'))
             time_meta['remove background'] = time.time() - start_time
 
-    # remove disk io to make responding faster, uncomment at your will.
-    # image.save(os.path.join(save_folder, 'rembg.png'))
-
-    # image to white model
     start_time = time.time()
 
     generator = torch.Generator()
@@ -427,7 +417,6 @@ def build_app():
                                              placeholder='HunyuanDiT will be used to generate image.',
                                              info='Example: A 3D model of a cute cat, white background')
                     with gr.Tab('MultiView Prompt', visible=MV_MODE) as tab_mv:
-                        # gr.Label('Please upload at least one front image.')
                         with gr.Row():
                             mv_image_front = gr.Image(label='Front', type='pil', image_mode='RGBA', height=140,
                                                       min_width=100, elem_classes='mv-image')
@@ -532,14 +521,14 @@ def build_app():
             <div style="margin-top: 5px;"  align="center">
                 <b>Warning: </b>
                 Texture synthesis is disable due to missing requirements,
-                 please install requirements following <a href="https://github.com/Tencent/Hunyuan3D-2?tab=readme-ov-file#install-requirements">README.md</a>to activate it.
+                 please install requirements following <a href="https://github.com/tencent/Hunyuan3D-2">README.md</a> to activate it.
             </div>
             """)
         if not args.enable_t23d:
-            gr.HTML("""
+            gr.HTML(f"""
             <div style="margin-top: 5px;"  align="center">
                 <b>Warning: </b>
-                Text to 3D is disable. To activate it, please run `python gradio_app.py --enable_t23d`.
+                Text to 3D is disable. To activate it, please run `python launcher.py --enable_t23d`.
             </div>
             """)
 
@@ -636,7 +625,7 @@ def build_app():
                 save_folder = gen_save_folder()
                 _ = export_mesh(mesh, save_folder, textured=True)
                 model_viewer_html = build_model_viewer_html(save_folder, height=HTML_HEIGHT, width=HTML_WIDTH,
-                                                            textured=True)
+                                                             textured=True)
             else:
                 mesh = trimesh.load(file_out)
                 mesh = floater_remove_worker(mesh)
@@ -650,7 +639,7 @@ def build_app():
                 save_folder = gen_save_folder()
                 _ = export_mesh(mesh, save_folder, textured=False)
                 model_viewer_html = build_model_viewer_html(save_folder, height=HTML_HEIGHT, width=HTML_WIDTH,
-                                                            textured=False)
+                                                             textured=False)
             print(f'export to {path}')
             return model_viewer_html, gr.update(value=path, interactive=True)
 
@@ -663,7 +652,6 @@ def build_app():
             outputs=[html_export_mesh, file_export]
         )
 
-            
         with gr.Row():
             with gr.Accordion("System Monitor", open=False):
                 system_stats = gr.Json(label="System Metrics")
@@ -671,24 +659,18 @@ def build_app():
 
     return demo
 
+
 def replace_property_getter(instance, property_name, new_getter):
-    # Get the original class and property
     original_class = type(instance)
     original_property = getattr(original_class, property_name)
-    
-    # Create a custom subclass for this instance
     custom_class = type(f'Custom{original_class.__name__}', (original_class,), {})
-    
-    # Create a new property with the new getter but same setter
     new_property = property(new_getter, original_property.fset)
     setattr(custom_class, property_name, new_property)
-    
-    # Change the instance's class
     instance.__class__ = custom_class
-    
     return instance
 
-if __name__ == '__main__':
+
+def main():
     import argparse
 
     parser = argparse.ArgumentParser()
@@ -700,7 +682,7 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--mc_algo', type=str, default='dmc')
     parser.add_argument('--cache-path', type=str,
-                        default=os.path.join(_XDG_CACHE, 'hy3dgen', 'gradio'))
+                        default=os.path.join(_XDG_CACHE, 'hy3dgen', 'launcher'))
     parser.add_argument('--enable_t23d', action='store_true')
     parser.add_argument('--profile', type=str, default="3")
     parser.add_argument('--verbose', type=str, default="1")
@@ -714,40 +696,39 @@ if __name__ == '__main__':
     parser.add_argument('--mv', action='store_true')
     parser.add_argument('--h2', action='store_true')
 
+    global args, SAVE_DIR, CURRENT_DIR, MV_MODE, TURBO_MODE, HTML_HEIGHT, HTML_WIDTH, HTML_OUTPUT_PLACEHOLDER, INPUT_MESH_HTML, example_is, example_ts, example_mvs, SUPPORTED_FORMATS, HAS_TEXTUREGEN, texgen_worker, rmbg_worker, i23d_worker, floater_remove_worker, degenerate_face_remove_worker, face_reduce_worker, t2i_worker, HAS_T2I
 
     args = parser.parse_args()
 
     if args.mini:
         args.model_path = "tencent/Hunyuan3D-2mini"
-        args.subfolder=  "hunyuan3d-dit-v2-mini"
+        args.subfolder = "hunyuan3d-dit-v2-mini"
         args.texgen_model_path = "tencent/Hunyuan3D-2"
 
     if args.mv:
         args.model_path = "tencent/Hunyuan3D-2mv"
-        args.subfolder=  "hunyuan3d-dit-v2-mv"
+        args.subfolder = "hunyuan3d-dit-v2-mv"
         args.texgen_model_path = "tencent/Hunyuan3D-2"
-
 
     if args.h2:
         args.model_path = "tencent/Hunyuan3D-2"
-        args.subfolder=  "hunyuan3d-dit-v2-0"
+        args.subfolder = "hunyuan3d-dit-v2-0"
         args.texgen_model_path = "tencent/Hunyuan3D-2"
 
     if args.turbo:
-        args.subfolder= args.subfolder  + "-turbo"
+        args.subfolder = args.subfolder + "-turbo"
         args.enable_flashvdm = True
 
     SAVE_DIR = args.cache_path
     os.makedirs(SAVE_DIR, exist_ok=True)
 
-    # Non-blocking version check
     try:
         from hy3dgen.version import check_for_updates
         update_info = check_for_updates()
         if update_info:
             logger.info(f"Update available: {update_info['latest']} → {update_info['url']}")
     except Exception:
-        pass  # Never block startup
+        pass
 
     CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
     MV_MODE = 'mv' in args.model_path
@@ -756,16 +737,14 @@ if __name__ == '__main__':
     HTML_HEIGHT = 690 if MV_MODE else 650
     HTML_WIDTH = 500
 
-
     HTML_OUTPUT_PLACEHOLDER = f'''
-    <div style='height: {650}px; width: 100%; border-radius: 8px; border-color: #e5e7eb; border-style: solid; border-width: 1px; display: flex; justify-content: center; align-items: center;'>
+    <div style='height: 650px; width: 100%; border-radius: 8px; border-color: #e5e7eb; border-style: solid; border-width: 1px; display: flex; justify-content: center; align-items: center;'>
       <div style='text-align: center; font-size: 16px; color: #6b7280;'>
         <p style="color: #8d8d8d;">Welcome to Hunyuan3D!</p>
         <p style="color: #8d8d8d;">No mesh here.</p>
       </div>
     </div>
     '''
-
 
     INPUT_MESH_HTML = """
     <div style='height: 490px; width: 100%; border-radius: 8px; 
@@ -775,8 +754,6 @@ if __name__ == '__main__':
     example_is = get_example_img_list()
     example_ts = get_example_txt_list()
     torch.set_default_device("cpu")
-    # try:
-    #     from hy3dgen.texgen import Hunyuan3DPaintPipeline
     example_mvs = get_example_mv_list()
 
     SUPPORTED_FORMATS = ['glb', 'obj', 'ply', 'stl']
@@ -785,26 +762,14 @@ if __name__ == '__main__':
     if not args.disable_tex:
         try:
             from hy3dgen.texgen import Hunyuan3DPaintPipeline
-
             texgen_worker = Hunyuan3DPaintPipeline.from_pretrained(args.texgen_model_path)
-            # texgen_worker.enable_model_cpu_offload()
-            # Not help much, ignore for now.
-            # if args.compile:
-            #     texgen_worker.models['delight_model'].pipeline.unet.compile()
-            #     texgen_worker.models['delight_model'].pipeline.vae.compile()
-            #     texgen_worker.models['multiview_model'].pipeline.unet.compile()
-            #     texgen_worker.models['multiview_model'].pipeline.vae.compile()
             HAS_TEXTUREGEN = True
         except Exception as e:
-            print(e)
-            print("Failed to load texture generator.")
-            print('Please try to install requirements by following README.md')
-            HAS_TEXTUREGEN = False
+            print(f"Failed to load texture generator: {e}")
 
     HAS_T2I = False
     if args.enable_t23d:
         from hy3dgen.text2image import HunyuanDiTPipeline
-
         t2i_worker = HunyuanDiTPipeline('Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled')
         HAS_T2I = True
 
@@ -831,26 +796,25 @@ if __name__ == '__main__':
     face_reduce_worker = FaceReducer()
   
     profile = int(args.profile) 
-    kwargs = {}
     replace_property_getter(i23d_worker, "_execution_device", lambda self : "cuda")
     pipe = offload.extract_models("i23d_worker", i23d_worker)
     if HAS_TEXTUREGEN:
-        pipe.update(  offload.extract_models( "texgen_worker", texgen_worker))
+        pipe.update(offload.extract_models("texgen_worker", texgen_worker))
         texgen_worker.models["multiview_model"].pipeline.vae.use_slicing = True
     if HAS_T2I:
-        pipe.update(  offload.extract_models( "t2i_worker", t2i_worker))
+        pipe.update(offload.extract_models("t2i_worker", t2i_worker))
         
-
     if profile < 5:
-        kwargs["pinnedMemory"] = "i23d_worker/model"
-    if profile !=1 and profile !=3:
-        kwargs["budgets"] = { "*" : 2200 }
-    offload.default_verboseLevel = verboseLevel = int(args.verbose)
-    offload.profile(pipe, profile_no = profile, verboseLevel = int(args.verbose), **kwargs)
+        kwargs_offload = {"pinnedMemory": "i23d_worker/model"}
+    else:
+        kwargs_offload = {}
+        
+    if profile != 1 and profile != 3:
+        kwargs_offload["budgets"] = {"*": 2200}
+    
+    offload.default_verboseLevel = int(args.verbose)
+    offload.profile(pipe, profile_no=profile, verboseLevel=int(args.verbose), **kwargs_offload)
 
-
-    # https://discuss.huggingface.co/t/how-to-serve-an-html-file/33921/2
-    # create a FastAPI app
     app = FastAPI()
 
     @app.get("/health")
@@ -862,7 +826,6 @@ if __name__ == '__main__':
             "text2image": HAS_T2I,
         }
 
-    # create a static directory to store the static files
     static_dir = Path(SAVE_DIR).absolute()
     static_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/static", StaticFiles(directory=static_dir, html=True), name="static")
@@ -871,7 +834,7 @@ if __name__ == '__main__':
     if args.low_vram_mode:
         torch.cuda.empty_cache()
     demo = build_app()
-    app = gr.mount_gradio_app(app, demo, path="/")
+    app_gradio = gr.mount_gradio_app(app, demo, path="/")
 
     def open_browser():
         target_url = f"http://{args.host}:{args.port}"
@@ -879,4 +842,8 @@ if __name__ == '__main__':
         webbrowser.open_new_tab(target_url)
 
     Timer(1.5, open_browser).start()
-    uvicorn.run(app, host=args.host, port=args.port, workers=1)
+    uvicorn.run(app_gradio, host=args.host, port=args.port, workers=1)
+
+
+if __name__ == '__main__':
+    main()

@@ -65,8 +65,8 @@ setup(
     cmdclass=cmdclass,
     entry_points={
         'console_scripts': [
-            'hy3dgen-api=api_server:main',
-            'hy3dgen-gradio=gradio_app:main',
+            'hy3dgen-api=hy3dgen.api.server:main',
+            'hy3dgen-launcher=launcher:main',
         ],
     },
     python_requires='>=3.8',

@@ -57,34 +57,34 @@ We systematically evaluate our models, showing that Hunyuan3D 2.0 outperforms pr
 including the open-source models and closed-source models in geometry details, condition alignment, texture quality, and
 e.t.c.
 
-## How to run the Gradio app
+## How to run the Archeon Launcher
 1) Follow the installation instructions below
 
 2) Enter either one of the commande lines in bash session
  
 To run the Hunyuan3D-2mini (low VRAM) image to 3D generator:
 ```bash
-python gradio_app.py 
+python launcher.py 
 ```
 
 To run the Hunyuan3D-2mv (multi views) image to 3D generator:
 ```bash
-python gradio_app.py --mv
+python launcher.py --mv
 ```
 
 To run the text to 3D generator (an extension of the mini generator):
 ```bash
-python gradio_app.py --enable_t23d
+python launcher.py --enable_t23d
 ```
 
 To run the original Hunyuan3D-2 image to 3D generator:
 ```bash
-python gradio_app.py --h2
+python launcher.py --h2
 ```
 
 To use the Turbo version of one specific model, add *--turbo*. For instance to run the turbo Hunyuan3D-2mv (multi views) image to 3D generator:
 ```bash
-python gradio_app.py --mv --turbo
+python launcher.py --mv --turbo
 ```
 
 
@@ -93,12 +93,12 @@ By default the memory profile assumes 9 GB of VRAM *(profile 3)*. If you have le
 
 To run the image to 3D generator with optimized memory management:
 ```bash
-python gradio_app.py --profile 3
+python launcher.py --profile 3
 
 ```
 To run the text to 3D generator with optimized memory management:
 ```bash
-python gradio_app.py --enable_t23d --profile 4
+python launcher.py --enable_t23d --profile 4
 
 ```
 
@@ -200,7 +200,7 @@ Hunyuan3D-2 Series
 You may follow the next steps to use Hunyuan3D 2.0 via:
 
 - [Code](#code-usage)
-- [Gradio App](#gradio-app)
+- [Archeon Launcher](#archeon-launcher)
 - [API Server](#api-server)
 - [Blender Addon](#blender-addon)
 - [Official Site](#official-site)

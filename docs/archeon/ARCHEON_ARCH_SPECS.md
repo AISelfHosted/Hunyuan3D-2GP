@@ -7,12 +7,12 @@ This document details the transformation of the monolithic/script-based Hunyuan3
 
 ## 1. Core Architectural Shift: The "Sidecar" Pattern
 
-Hunyuan3D-2.1 is primarily a research-oriented codebase centered around Gradio or individual inference scripts. Archeon 3D migrates this to a **Sidecar Architecture**.
+Hunyuan3D-2.1 is primarily a research-oriented codebase centered around Archeon Launcher or individual inference scripts. Archeon 3D migrates this to a **Sidecar Architecture**.
 
 ### Key Improvements:
 - **Decoupled Frontend**: The GUI is a modern HTML/JS/CSS frontend served by a FastAPI backend, enabling native desktop integration via Tauri.
-- **Unified Entry Point**: `archeon_3d.py` handles environment setup, dynamic port allocation, and sub-process lifecycle management.
-- **Dynamic Port Allocation**: Uses `find_free_port` to avoid collisions with other local dev servers (e.g., Gradio defaults).
+- **Unified Entry Point**: `launcher.py` handles environment setup, dynamic port allocation, and sub-process lifecycle management.
+- **Dynamic Port Allocation**: Uses `find_free_port` to avoid collisions with other local dev servers (e.g., Archeon Launcher defaults).
 
 ---
 

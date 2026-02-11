@@ -1,4 +1,4 @@
-"""Tests for gradio_app.py utility functions and configuration."""
+"""Tests for launcher.py utility functions and configuration."""
 
 import os
 import random
@@ -19,7 +19,7 @@ MAX_SEED = int(1e7)
 
 
 def randomize_seed_fn(seed: int, randomize_seed: bool) -> int:
-    """Mirror of gradio_app.randomize_seed_fn for isolated testing."""
+    """Mirror of launcher.randomize_seed_fn for isolated testing."""
     if randomize_seed:
         seed = random.randint(0, MAX_SEED)
     return seed
@@ -84,7 +84,7 @@ class TestGenSaveFolder:
             created.append(d)
             import time
             time.sleep(0.05)  # Ensure different ctime
-
+        
         dirs = [f for f in Path(save_dir).iterdir() if f.is_dir()]
         assert len(dirs) == max_size
 

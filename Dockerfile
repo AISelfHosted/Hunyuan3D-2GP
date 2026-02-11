@@ -33,19 +33,19 @@ COPY . .
 RUN pip3 install --no-cache-dir .
 
 # Create directories and set permissions if needed
-RUN mkdir -p /app/logs /app/gradio_cache
+RUN mkdir -p /app/logs /app/launcher_cache
 
 # Expose ports
 EXPOSE 8080 8081
 
-# Default to Gradio app
-ENV APP_MODE=gradio
+# Default to launcher app
+ENV APP_MODE=launcher
 ENV EXTRA_ARGS=""
 
 # Entrypoint script logic inline
 ENTRYPOINT ["/bin/bash", "-c"]
 CMD ["if [ \"$APP_MODE\" = 'api' ]; then \
-       python3 api_server.py --host 0.0.0.0 --port 8081 $EXTRA_ARGS; \
+       hy3dgen-api --host 0.0.0.0 --port 8081 $EXTRA_ARGS; \
      else \
-       python3 gradio_app.py --host 0.0.0.0 --port 8080 $EXTRA_ARGS; \
+       hy3dgen-launcher --host 0.0.0.0 --port 8080 $EXTRA_ARGS; \
      fi"]
