@@ -18,6 +18,8 @@ import shutil
 import time
 from glob import glob
 from pathlib import Path
+import webbrowser
+from threading import Timer
 
 import gradio as gr
 import torch
@@ -27,6 +29,8 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from mmgp import offload
 import uuid
+import webbrowser
+from threading import Timer
 
 from hy3dgen.shapegen.utils import logger as _shapegen_logger
 
@@ -863,4 +867,11 @@ if __name__ == '__main__':
         torch.cuda.empty_cache()
     demo = build_app()
     app = gr.mount_gradio_app(app, demo, path="/")
+
+    def open_browser():
+        target_url = f"http://{args.host}:{args.port}"
+        logger.info(f"Opening browser at {target_url}")
+        webbrowser.open_new_tab(target_url)
+
+    Timer(1.5, open_browser).start()
     uvicorn.run(app, host=args.host, port=args.port, workers=1)
