@@ -277,12 +277,6 @@ def generation_all(
     )
     path = export_mesh(mesh, save_folder, textured=False)
 
-    # tmp_time = time.time()
-    # mesh = floater_remove_worker(mesh)
-    # mesh = degenerate_face_remove_worker(mesh)
-    # logger.info("---Postprocessing takes %s seconds ---" % (time.time() - tmp_time))
-    # stats['time']['postprocessing'] = time.time() - tmp_time
-
     tmp_time = time.time()
     mesh = face_reduce_worker(mesh)
     logger.info("---Face Reduction takes %s seconds ---" % (time.time() - tmp_time))
@@ -300,70 +294,6 @@ def generation_all(
                                                          textured=True)
     if args.low_vram_mode:
         torch.cuda.empty_cache()
-    return (
-        gr.update(value=path),
-        gr.update(value=path_textured),
-        model_viewer_html_textured,
-        stats,
-        seed,
-    )
-
-
-def shape_generation(
-    caption=None,
-    image=None,
-    mv_image_front=None,
-    mv_image_back=None,
-    mv_image_left=None,
-    mv_image_right=None,
-    steps=50,
-    guidance_scale=7.5,
-    seed=1234,
-    octree_resolution=256,
-    check_box_rembg=False,
-    num_chunks=200000,
-    randomize_seed: bool = False,
-):
-    start_time_0 = time.time()
-    mesh, image, save_folder, stats, seed = _gen_shape(
-        caption,
-        image,
-        mv_image_front=mv_image_front,
-        mv_image_back=mv_image_back,
-        mv_image_left=mv_image_left,
-        mv_image_right=mv_image_right,
-        steps=steps,
-        guidance_scale=guidance_scale,
-        seed=seed,
-        octree_resolution=octree_resolution,
-        check_box_rembg=check_box_rembg,
-        num_chunks=num_chunks,
-        randomize_seed=randomize_seed,
-    )
-    path = export_mesh(mesh, save_folder, textured=False)
-
-    # tmp_time = time.time()
-    # mesh = floater_remove_worker(mesh)
-    # mesh = degenerate_face_remove_worker(mesh)
-    # logger.info("---Postprocessing takes %s seconds ---" % (time.time() - tmp_time))
-    # stats['time']['postprocessing'] = time.time() - tmp_time
-
-    tmp_time = time.time()
-    mesh = face_reduce_worker(mesh)
-    logger.info("---Face Reduction takes %s seconds ---" % (time.time() - tmp_time))
-    stats['time']['face reduction'] = time.time() - tmp_time
-
-    tmp_time = time.time()
-    textured_mesh = texgen_worker(mesh, image)
-    logger.info("---Texture Generation takes %s seconds ---" % (time.time() - tmp_time))
-    stats['time']['texture generation'] = time.time() - tmp_time
-    stats['time']['total'] = time.time() - start_time_0
-
-    textured_mesh.metadata['extras'] = stats
-    path_textured = export_mesh(textured_mesh, save_folder, textured=True)
-    model_viewer_html_textured = build_model_viewer_html(save_folder, height=HTML_HEIGHT, width=HTML_WIDTH,
-                                                         textured=True)
-    torch.cuda.empty_cache()
     return (
         gr.update(value=path),
         gr.update(value=path_textured),
