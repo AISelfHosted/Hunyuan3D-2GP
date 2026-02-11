@@ -601,24 +601,36 @@ def build_app():
     .gr-button-secondary.api-link {
         display: none !important;
     }
+
+    /* Force tabs to same row */
+    .tabs > .tab-nav {
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+    }
+    
+    .tabs > .tab-nav > button {
+        white-space: nowrap !important;
+        flex-shrink: 0 !important;
+    }
     """
 
     with gr.Blocks(theme=archeon_theme, title='Archeon 3D Launcher', analytics_enabled=False, css=custom_css) as demo:
         with gr.Column(elem_id="header-container"):
             gr.HTML(f"""
-            <div style="text-align: center; margin-bottom: 2rem; margin-top: 1rem;">
-                <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem;" class="archeon-header">ARCHEON 3D <span class="archeon-badge">SIDE CAR READY</span></h1>
-                <p style="color: #94a3b8; font-size: 1.1rem; max-width: 800px; margin: 0 auto;">
+            <div style="text-align: center; margin-bottom: 0.5rem; margin-top: 0.5rem;">
+                <h1 style="font-size: 1.8rem; margin-bottom: 0.1rem;" class="archeon-header">ARCHEON 3D <span class="archeon-badge">SIDE CAR READY</span></h1>
+                <p style="color: #94a3b8; font-size: 0.9rem; max-width: 800px; margin: 0 auto;">
                     Professional 3D Generation Pipeline. Powered by Tencent Hunyuan3D-2.0 & GPU-Poor optimizations.
                 </p>
             </div>
             """)
 
         with gr.Row():
-            with gr.Column(scale=2):
+            with gr.Column(scale=3):
                 with gr.Tabs(selected='tab_img_prompt') as tabs_prompt:
                     with gr.Tab('Image Prompt', id='tab_img_prompt') as tab_ip:
-                        image = gr.Image(label='Image', type='pil', image_mode='RGBA', height=350)
+                        image = gr.Image(label='Image', type='pil', image_mode='RGBA', height=300, sources=['upload', 'clipboard'])
 
                     with gr.Tab('Text Prompt', id='tab_txt_prompt') as tab_tp:
                         caption = gr.Textbox(label='Text Prompt',
@@ -627,14 +639,14 @@ def build_app():
                     with gr.Tab('MultiView Prompt', id='tab_mv_prompt') as tab_mv:
                         with gr.Row():
                             mv_image_front = gr.Image(label='Front', type='pil', image_mode='RGBA', height=140,
-                                                      min_width=100, elem_classes='mv-image')
+                                                      min_width=100, elem_classes='mv-image', sources=['upload', 'clipboard'])
                             mv_image_back = gr.Image(label='Back', type='pil', image_mode='RGBA', height=140,
-                                                     min_width=100, elem_classes='mv-image')
+                                                     min_width=100, elem_classes='mv-image', sources=['upload', 'clipboard'])
                         with gr.Row():
                             mv_image_left = gr.Image(label='Left', type='pil', image_mode='RGBA', height=140,
-                                                     min_width=100, elem_classes='mv-image')
+                                                     min_width=100, elem_classes='mv-image', sources=['upload', 'clipboard'])
                             mv_image_right = gr.Image(label='Right', type='pil', image_mode='RGBA', height=140,
-                                                      min_width=100, elem_classes='mv-image')
+                                                      min_width=100, elem_classes='mv-image', sources=['upload', 'clipboard'])
 
                 with gr.Row():
                     btn = gr.Button(value='Gen Shape', variant='primary', min_width=100)
@@ -706,23 +718,23 @@ def build_app():
                     with gr.Tab('Image to 3D Gallery', id='tab_img_gallery') as tab_gi:
                         with gr.Row():
                             gr.Examples(examples=example_is, inputs=[image],
-                                        label=None, examples_per_page=12)
+                                        label=None, examples_per_page=9)
 
                     with gr.Tab('Text to 3D Gallery', id='tab_txt_gallery') as tab_gt:
                         with gr.Row():
                             gr.Examples(examples=example_ts, inputs=[caption],
-                                        label=None, examples_per_page=18)
+                                        label=None, examples_per_page=9)
                     with gr.Tab('MultiView Gallery', id='tab_mv_gallery') as tab_mv_gal:
                         with gr.Row():
                             gr.Examples(examples=example_mvs,
                                         inputs=[mv_image_front, mv_image_back, mv_image_left, mv_image_right],
-                                        label=None, examples_per_page=6)
+                                        label=None, examples_per_page=4)
 
         gr.HTML(f"""
-        <div align="center" style="color: #64748b; margin-top: 2rem; border-top: 1px solid #1f2937; padding-top: 1rem;">
+        <div align="center" style="color: #64748b; margin-top: 0.5rem; border-top: 1px solid #1f2937; padding-top: 0.5rem; font-size: 0.8rem;">
             Archeon 3D Engine &bull; Shape: {args.model_path}/{args.subfolder} &bull; Texture: {'Vanguard-H3D' if HAS_TEXTUREGEN else 'Disabled'}
             <br>
-            <span style="font-size: 0.8rem; opacity: 0.5;">Based on Tencent Hunyuan3D-2.0 | Archeon Core Infrastructure</span>
+            <span style="opacity: 0.5;">Based on Tencent Hunyuan3D-2.0 | Archeon Core Infrastructure</span>
         </div>
         """)
 
@@ -849,10 +861,6 @@ def build_app():
             outputs=[html_export_mesh, file_export]
         )
 
-        with gr.Row():
-            with gr.Accordion("System Monitor", open=False):
-                system_stats = gr.Json(label="System Metrics")
-                gr.Timer(2.0).tick(get_system_metrics, outputs=[system_stats])
 
     return demo
 
@@ -936,7 +944,7 @@ def main():
     MV_MODE = 'mv' in args.model_path
     TURBO_MODE = 'turbo' in args.subfolder
 
-    HTML_HEIGHT = 800
+    HTML_HEIGHT = 580
     HTML_WIDTH = 1000
 
     HTML_OUTPUT_PLACEHOLDER = f'''
