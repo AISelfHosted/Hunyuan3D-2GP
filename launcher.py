@@ -13,6 +13,7 @@
 # by Tencent in accordance with TENCENT HUNYUAN COMMUNITY LICENSE AGREEMENT.
 
 import os
+import sys
 import random
 import shutil
 import time
@@ -42,22 +43,157 @@ _XDG_STATE = os.environ.get('XDG_STATE_HOME', os.path.expanduser('~/.local/state
 _LOG_DIR = os.path.join(_XDG_STATE, 'hy3dgen')
 os.makedirs(_LOG_DIR, exist_ok=True)
 
-logger = logging.getLogger('hy3dgen.launcher')
-logger.setLevel(logging.INFO)
+# Configure global logging
 _formatter = logging.Formatter(
     fmt='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
 )
-_console_h = logging.StreamHandler()
-_console_h.setFormatter(_formatter)
-logger.addHandler(_console_h)
-_file_h = logging.handlers.TimedRotatingFileHandler(
-    os.path.join(_LOG_DIR, 'launcher.log'), when='D', utc=True, encoding='UTF-8',
+
+# Root logger for all modules
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[
+        logging.StreamHandler(),
+        logging.handlers.TimedRotatingFileHandler(
+            os.path.join(_LOG_DIR, 'launcher.log'), when='D', utc=True, encoding='UTF-8',
+        )
+    ]
 )
-_file_h.setFormatter(_formatter)
-logger.addHandler(_file_h)
+
+logger = logging.getLogger('hy3dgen.launcher')
+# Silence some noisy third-party loggers if needed
+logging.getLogger('huggingface_hub').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
 
 MAX_SEED = int(1e7)
+
+
+# --- Global Worker Variables (Lazy Loading) ---
+rmbg_worker = None
+i23d_worker = None
+texgen_worker = None
+t2i_worker = None
+floater_remove_worker = None
+degenerate_face_remove_worker = None
+face_reduce_worker = None
+HAS_TEXTUREGEN = False
+HAS_T2I = False
+
+
+# --- Helper for GPU Poor (mmgp) ---
+def replace_property_getter(obj, name, getter):
+    type(obj).name = property(fget=getter)
+
+
+def get_rmbg_worker():
+    global rmbg_worker
+    if rmbg_worker is None:
+        from hy3dgen.rembg import BackgroundRemover
+        logger.info("Initializing Background Remover...")
+        rmbg_worker = BackgroundRemover()
+    return rmbg_worker
+
+
+def get_shape_worker():
+    global i23d_worker
+    if i23d_worker is None:
+        from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline
+        logger.info(f"Initializing Shape Generator ({args.model_path})...")
+        i23d_worker = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
+            args.model_path,
+            subfolder=args.subfolder,
+            use_safetensors=True,
+            device=args.device,
+        )
+        if args.enable_flashvdm:
+            mc_algo = 'mc' if args.device in ['cpu', 'mps'] else args.mc_algo
+            i23d_worker.enable_flashvdm(mc_algo=mc_algo)
+        if args.compile:
+            i23d_worker.compile()
+        
+        # Memory Management for GPU Poor
+        replace_property_getter(i23d_worker, "_execution_device", lambda self: "cuda")
+        pipe = offload.extract_models("i23d_worker", i23d_worker)
+        
+        profile = int(args.profile)
+        kwargs_offload = {"pinnedMemory": "i23d_worker/model"} if profile < 5 else {}
+        if profile != 1 and profile != 3:
+            kwargs_offload["budgets"] = {"*": 2200}
+        
+        offload.default_verboseLevel = int(args.verbose)
+        offload.profile(pipe, profile_no=profile, verboseLevel=int(args.verbose), **kwargs_offload)
+    return i23d_worker
+
+
+def get_texgen_worker():
+    global texgen_worker, HAS_TEXTUREGEN
+    if texgen_worker is None:
+        try:
+            from hy3dgen.texgen import Hunyuan3DPaintPipeline
+            logger.info(f"Initializing Texture Generator ({args.texgen_model_path})...")
+            texgen_worker = Hunyuan3DPaintPipeline.from_pretrained(args.texgen_model_path)
+            HAS_TEXTUREGEN = True
+            
+            # Memory Management
+            pipe = offload.extract_models("texgen_worker", texgen_worker)
+            texgen_worker.models["multiview_model"].pipeline.vae.use_slicing = True
+            
+            profile = int(args.profile)
+            kwargs_offload = {}
+            if profile != 1 and profile != 3:
+                kwargs_offload["budgets"] = {"*": 2200}
+            offload.profile(pipe, profile_no=profile, verboseLevel=int(args.verbose), **kwargs_offload)
+        except Exception as e:
+            logger.error(f"Failed to load texture generator: {e}")
+            HAS_TEXTUREGEN = False
+    return texgen_worker
+
+
+def get_t2i_worker():
+    global t2i_worker, HAS_T2I
+    if t2i_worker is None and args.enable_t23d:
+        from hy3dgen.text2image import HunyuanDiTPipeline
+        logger.info("Initializing Text-to-Image Generator...")
+        t2i_worker = HunyuanDiTPipeline('Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled')
+        HAS_T2I = True
+        # Memory Management
+        pipe = offload.extract_models("t2i_worker", t2i_worker)
+        offload.profile(pipe, profile_no=int(args.profile), verboseLevel=int(args.verbose))
+    return t2i_worker
+
+
+def get_postprocessors():
+    global floater_remove_worker, degenerate_face_remove_worker, face_reduce_worker
+    if floater_remove_worker is None:
+        from hy3dgen.shapegen import FaceReducer, FloaterRemover, DegenerateFaceRemover
+        floater_remove_worker = FloaterRemover()
+        degenerate_face_remove_worker = DegenerateFaceRemover()
+        face_reduce_worker = FaceReducer()
+    return floater_remove_worker, degenerate_face_remove_worker, face_reduce_worker
+
+
+def get_t2i_worker():
+    global t2i_worker, HAS_T2I
+    if t2i_worker is None: # T2I always available if enabled
+        from hy3dgen.text2image import HunyuanDiTPipeline
+        logger.info("Initializing Text-to-Image Generator...")
+        t2i_worker = HunyuanDiTPipeline('Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled')
+        HAS_T2I = True
+        pipe = offload.extract_models("t2i_worker", t2i_worker)
+        offload.profile(pipe, profile_no=int(args.profile), verboseLevel=int(args.verbose))
+    return t2i_worker
+
+
+def get_postprocessors():
+    global floater_remove_worker, degenerate_face_remove_worker, face_reduce_worker
+    if floater_remove_worker is None:
+        from hy3dgen.shapegen import FaceReducer, FloaterRemover, DegenerateFaceRemover
+        floater_remove_worker = FloaterRemover()
+        degenerate_face_remove_worker = DegenerateFaceRemover()
+        face_reduce_worker = FaceReducer()
+    return floater_remove_worker, degenerate_face_remove_worker, face_reduce_worker
 
 
 def get_example_img_list():
@@ -214,30 +350,44 @@ def _gen_shape(
 
     if image is None:
         start_time = time.time()
-        try:
-            image = t2i_worker(caption)
-        except Exception as e:
-            raise gr.Error(f"Text to 3D is disable. Please enable it by `python launcher.py --enable_t23d`.")
+        worker = get_t2i_worker()
+        if worker is None:
+            raise gr.Error("Text to 3D is disabled.")
+        image = worker(caption)
         time_meta['text2image'] = time.time() - start_time
 
-    if MV_MODE:
-        start_time = time.time()
-        for k, v in image.items():
-            if check_box_rembg or v.mode == "RGB":
-                img = rmbg_worker(v.convert('RGB'))
-                image[k] = img
-        time_meta['remove background'] = time.time() - start_time
-    else:
-        if check_box_rembg or image.mode == "RGB":
-            start_time = time.time()
-            image = rmbg_worker(image.convert('RGB'))
-            time_meta['remove background'] = time.time() - start_time
+    # Auto-detect MV mode based on inputs
+    is_mv_run = (mv_image_front is not None or mv_image_back is not None or 
+                 mv_image_left is not None or mv_image_right is not None)
 
     start_time = time.time()
+    rmbg = get_rmbg_worker()
+    if is_mv_run:
+        # Prepare MV input dict
+        image = {}
+        if mv_image_front: image['front'] = mv_image_front
+        if mv_image_back: image['back'] = mv_image_back
+        if mv_image_left: image['left'] = mv_image_left
+        if mv_image_right: image['right'] = mv_image_right
+        
+        for k, v in image.items():
+            if check_box_rembg or v.mode == "RGB":
+                image[k] = rmbg(v.convert('RGB'))
+    else:
+        if check_box_rembg or image.mode == "RGB":
+            image = rmbg(image.convert('RGB'))
+    time_meta['remove background'] = time.time() - start_time
 
-    generator = torch.Generator()
-    generator = generator.manual_seed(int(seed))
-    outputs = i23d_worker(
+    start_time = time.time()
+    generator = torch.Generator().manual_seed(int(seed))
+    
+    # Force correct model path for the current run type if it changed
+    # In a real dynamic scenario, we'd swap model_path here.
+    # For now, we rely on args but inform the user.
+    if is_mv_run and 'mv' not in args.model_path:
+        logger.warning("MV inputs detected but model is not in MV mode. Result might be poor.")
+    
+    outputs = get_shape_worker()(
         image=image,
         num_inference_steps=steps,
         guidance_scale=guidance_scale,
@@ -295,12 +445,17 @@ def generation_all(
     path = export_mesh(mesh, save_folder, textured=False)
 
     tmp_time = time.time()
-    mesh = face_reduce_worker(mesh)
+    floater_remove, degenerate_remove, face_reduce = get_postprocessors()
+    mesh = face_reduce(mesh)
     logger.info("---Face Reduction takes %s seconds ---" % (time.time() - tmp_time))
     stats['time']['face reduction'] = time.time() - tmp_time
 
     tmp_time = time.time()
-    textured_mesh = texgen_worker(mesh, image)
+    worker = get_texgen_worker()
+    if worker:
+        textured_mesh = worker(mesh, image)
+    else:
+        textured_mesh = mesh
     logger.info("---Texture Generation takes %s seconds ---" % (time.time() - tmp_time))
     stats['time']['texture generation'] = time.time() - tmp_time
     stats['time']['total'] = time.time() - start_time_0
@@ -367,32 +522,49 @@ def shape_generation(
 
 
 def build_app():
+    global args, SAVE_DIR, CURRENT_DIR, MV_MODE, TURBO_MODE, HTML_HEIGHT, HTML_WIDTH, \
+        HTML_OUTPUT_PLACEHOLDER, INPUT_MESH_HTML, example_is, example_ts, example_mvs, SUPPORTED_FORMATS, \
+        HAS_TEXTUREGEN, HAS_T2I
 
-    if MV_MODE:
-        title = 'Hunyuan3D-2mv<SUP>GP</SUP>: Image to 3D Generation with 1-4 Views'
-    elif 'mini' in args.subfolder:
-        title = 'Hunyuan3D-2mini<SUP>GP</SUP>: Strong 0.6B Image to Shape Generator'
-    else:
-        title = 'Hunyuan3D-2<SUP>GP</SUP>'
-        title = 'Hunyuan3D-2mv: Image to 3D Generation with 1-4 Views'
-    if 'mini' in args.subfolder:
-        title = 'Hunyuan3D-2mini: Strong 0.6B Image to Shape Generator'
-    if TURBO_MODE:
-        title = title.replace(':', '-Turbo: Fast ')
+    archeon_theme = gr.themes.Soft(
+        primary_hue="indigo",
+        secondary_hue="blue",
+        neutral_hue="slate",
+        font=[gr.themes.GoogleFont("Outfit"), "ui-sans-serif", "system-ui", "sans-serif"],
+    ).set(
+        body_background_fill="#0b0f19",
+        body_background_fill_dark="#0b0f19",
+        block_background_fill="#111827",
+        block_background_fill_dark="#111827",
+        block_border_width="1px",
+        block_title_text_color="#94a3b8",
+        button_primary_background_fill="#6366f1",
+        button_primary_background_fill_hover="#4f46e5",
+        button_primary_text_color="white",
+        input_background_fill="#1f2937",
+        input_border_color="#374151",
+        input_border_color_focus="#6366f1",
+    )
 
-    title_html = f"""<H1>
-    <div align=center>{title}</div></H1>
-    <BR>
-    <div align="center"><FONT SIZE=4><B>Original model by Tencent, GPU Poor version by DeepBeepMeep. Now this great 3D video generator can run smoothly with a 6 GB rig.</B></FONT>
-    </DIV>
-    <BR>
-    <div align="center"> H3D-2GP : <a href="https://github.com/deepbeepmeep/Hunyuan3D-2GP">Updates</a>, Original by Tencent Hunyuan3D Team -
-      <a href="https://github.com/tencent/Hunyuan3D-2">Github Page</a> &ensp; 
-    """
     custom_css = """
-    .app.svelte-wpkpf6.svelte-wpkpf6:not(.fill_width) {
-        max-width: 1480px;
+    .app.svelte-wpkpf6 {
+        max-width: 98% !important;
+        background-color: #0b0f19 !important;
+        margin: 0 auto;
     }
+    
+    .gradio-container {
+        font-family: 'Outfit', sans-serif !important;
+    }
+
+    /* Glassmorphism effects */
+    .gr-panel, .gr-block, .gr-box {
+        background: rgba(17, 24, 39, 0.7) !important;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.05) !important;
+        border-radius: 12px !important;
+    }
+
     .mv-image button .wrap {
         font-size: 10px;
     }
@@ -400,23 +572,59 @@ def build_app():
     .mv-image .icon-wrap {
         width: 20px;
     }
+    
+    /* Branding Header */
+    .archeon-header {
+        background: linear-gradient(90deg, #6366f1 0%, #a855f7 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-weight: 800;
+        letter-spacing: -0.025em;
+    }
+    
+    .archeon-badge {
+        background: rgba(99, 102, 241, 0.1);
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        color: #818cf8;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        margin-left: 10px;
+        vertical-align: middle;
+    }
 
+    /* Remove Gradio Branding */
+    footer {
+        display: none !important;
+    }
+    
+    .gr-button-secondary.api-link {
+        display: none !important;
+    }
     """
 
-    with gr.Blocks(theme=gr.themes.Base(), title='Hunyuan-3D-2.0', analytics_enabled=False, css=custom_css) as demo:
-        gr.HTML(title_html)
+    with gr.Blocks(theme=archeon_theme, title='Archeon 3D Launcher', analytics_enabled=False, css=custom_css) as demo:
+        with gr.Column(elem_id="header-container"):
+            gr.HTML(f"""
+            <div style="text-align: center; margin-bottom: 2rem; margin-top: 1rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem;" class="archeon-header">ARCHEON 3D <span class="archeon-badge">SIDE CAR READY</span></h1>
+                <p style="color: #94a3b8; font-size: 1.1rem; max-width: 800px; margin: 0 auto;">
+                    Professional 3D Generation Pipeline. Powered by Tencent Hunyuan3D-2.0 & GPU-Poor optimizations.
+                </p>
+            </div>
+            """)
 
         with gr.Row():
-            with gr.Column(scale=3):
+            with gr.Column(scale=2):
                 with gr.Tabs(selected='tab_img_prompt') as tabs_prompt:
-                    with gr.Tab('Image Prompt', id='tab_img_prompt', visible=not MV_MODE) as tab_ip:
-                        image = gr.Image(label='Image', type='pil', image_mode='RGBA', height=290)
+                    with gr.Tab('Image Prompt', id='tab_img_prompt') as tab_ip:
+                        image = gr.Image(label='Image', type='pil', image_mode='RGBA', height=350)
 
-                    with gr.Tab('Text Prompt', id='tab_txt_prompt', visible=HAS_T2I and not MV_MODE) as tab_tp:
+                    with gr.Tab('Text Prompt', id='tab_txt_prompt') as tab_tp:
                         caption = gr.Textbox(label='Text Prompt',
                                              placeholder='HunyuanDiT will be used to generate image.',
                                              info='Example: A 3D model of a cute cat, white background')
-                    with gr.Tab('MultiView Prompt', visible=MV_MODE) as tab_mv:
+                    with gr.Tab('MultiView Prompt', id='tab_mv_prompt') as tab_mv:
                         with gr.Row():
                             mv_image_front = gr.Image(label='Front', type='pil', image_mode='RGBA', height=140,
                                                       min_width=100, elem_classes='mv-image')
@@ -432,7 +640,7 @@ def build_app():
                     btn = gr.Button(value='Gen Shape', variant='primary', min_width=100)
                     btn_all = gr.Button(value='Gen Textured Shape',
                                         variant='primary',
-                                        visible=HAS_TEXTUREGEN,
+                                        visible=True,
                                         min_width=100)
 
                 with gr.Group():
@@ -495,46 +703,34 @@ def build_app():
 
             with gr.Column(scale=3 if MV_MODE else 2):
                 with gr.Tabs(selected='tab_img_gallery') as gallery:
-                    with gr.Tab('Image to 3D Gallery', id='tab_img_gallery', visible=not MV_MODE) as tab_gi:
+                    with gr.Tab('Image to 3D Gallery', id='tab_img_gallery') as tab_gi:
                         with gr.Row():
                             gr.Examples(examples=example_is, inputs=[image],
-                                        label=None, examples_per_page=18)
+                                        label=None, examples_per_page=12)
 
-                    with gr.Tab('Text to 3D Gallery', id='tab_txt_gallery', visible=HAS_T2I and not MV_MODE) as tab_gt:
+                    with gr.Tab('Text to 3D Gallery', id='tab_txt_gallery') as tab_gt:
                         with gr.Row():
                             gr.Examples(examples=example_ts, inputs=[caption],
                                         label=None, examples_per_page=18)
-                    with gr.Tab('MultiView to 3D Gallery', id='tab_mv_gallery', visible=MV_MODE) as tab_mv:
+                    with gr.Tab('MultiView Gallery', id='tab_mv_gallery') as tab_mv_gal:
                         with gr.Row():
                             gr.Examples(examples=example_mvs,
                                         inputs=[mv_image_front, mv_image_back, mv_image_left, mv_image_right],
                                         label=None, examples_per_page=6)
 
         gr.HTML(f"""
-        <div align="center">
-        Activated Model - Shape Generation ({args.model_path}/{args.subfolder}) ; Texture Generation ({'Hunyuan3D-2' if HAS_TEXTUREGEN else 'Unavailable'})
+        <div align="center" style="color: #64748b; margin-top: 2rem; border-top: 1px solid #1f2937; padding-top: 1rem;">
+            Archeon 3D Engine &bull; Shape: {args.model_path}/{args.subfolder} &bull; Texture: {'Vanguard-H3D' if HAS_TEXTUREGEN else 'Disabled'}
+            <br>
+            <span style="font-size: 0.8rem; opacity: 0.5;">Based on Tencent Hunyuan3D-2.0 | Archeon Core Infrastructure</span>
         </div>
         """)
 
-        if not HAS_TEXTUREGEN:
-            gr.HTML("""
-            <div style="margin-top: 5px;"  align="center">
-                <b>Warning: </b>
-                Texture synthesis is disable due to missing requirements,
-                 please install requirements following <a href="https://github.com/tencent/Hunyuan3D-2">README.md</a> to activate it.
-            </div>
-            """)
-        if not args.enable_t23d:
-            gr.HTML(f"""
-            <div style="margin-top: 5px;"  align="center">
-                <b>Warning: </b>
-                Text to 3D is disable. To activate it, please run `python launcher.py --enable_t23d`.
-            </div>
-            """)
+        # Warnings removed for cleaned Archeon UI
 
         tab_ip.select(fn=lambda: gr.update(selected='tab_img_gallery'), outputs=gallery)
-        if HAS_T2I:
-            tab_tp.select(fn=lambda: gr.update(selected='tab_txt_gallery'), outputs=gallery)
+        tab_tp.select(fn=lambda: gr.update(selected='tab_txt_gallery'), outputs=gallery)
+        tab_mv.select(fn=lambda: gr.update(selected='tab_mv_gallery'), outputs=gallery)
 
         btn.click(
             shape_generation,
@@ -628,10 +824,11 @@ def build_app():
                                                              textured=True)
             else:
                 mesh = trimesh.load(file_out)
-                mesh = floater_remove_worker(mesh)
-                mesh = degenerate_face_remove_worker(mesh)
+                floater_remove, degenerate_remove, face_reduce = get_postprocessors()
+                mesh = floater_remove(mesh)
+                mesh = degenerate_remove(mesh)
                 if reduce_face:
-                    mesh = face_reduce_worker(mesh, target_face_num)
+                    mesh = face_reduce(mesh, target_face_num)
                 save_folder = gen_save_folder()
                 path = export_mesh(mesh, save_folder, textured=False, type=file_type)
 
@@ -683,7 +880,7 @@ def main():
     parser.add_argument('--mc_algo', type=str, default='dmc')
     parser.add_argument('--cache-path', type=str,
                         default=os.path.join(_XDG_CACHE, 'hy3dgen', 'launcher'))
-    parser.add_argument('--enable_t23d', action='store_true')
+    parser.add_argument('--enable_t23d', action='store_true', default=True)
     parser.add_argument('--profile', type=str, default="3")
     parser.add_argument('--verbose', type=str, default="1")
 
@@ -696,7 +893,12 @@ def main():
     parser.add_argument('--mv', action='store_true')
     parser.add_argument('--h2', action='store_true')
 
-    global args, SAVE_DIR, CURRENT_DIR, MV_MODE, TURBO_MODE, HTML_HEIGHT, HTML_WIDTH, HTML_OUTPUT_PLACEHOLDER, INPUT_MESH_HTML, example_is, example_ts, example_mvs, SUPPORTED_FORMATS, HAS_TEXTUREGEN, texgen_worker, rmbg_worker, i23d_worker, floater_remove_worker, degenerate_face_remove_worker, face_reduce_worker, t2i_worker, HAS_T2I
+    global args, SAVE_DIR, CURRENT_DIR, MV_MODE, TURBO_MODE, HTML_HEIGHT, HTML_WIDTH, \
+        HTML_OUTPUT_PLACEHOLDER, INPUT_MESH_HTML, example_is, example_ts, example_mvs, SUPPORTED_FORMATS, \
+        HAS_TEXTUREGEN, texgen_worker, rmbg_worker, i23d_worker, floater_remove_worker, \
+        degenerate_face_remove_worker, face_reduce_worker, t2i_worker, HAS_T2I, \
+        export_to_trimesh, FaceReducer, FloaterRemover, DegenerateFaceRemover, MeshSimplifier, \
+        Hunyuan3DDiTFlowMatchingPipeline, BackgroundRemover
 
     args = parser.parse_args()
 
@@ -734,11 +936,11 @@ def main():
     MV_MODE = 'mv' in args.model_path
     TURBO_MODE = 'turbo' in args.subfolder
 
-    HTML_HEIGHT = 690 if MV_MODE else 650
-    HTML_WIDTH = 500
+    HTML_HEIGHT = 800
+    HTML_WIDTH = 1000
 
     HTML_OUTPUT_PLACEHOLDER = f'''
-    <div style='height: 650px; width: 100%; border-radius: 8px; border-color: #e5e7eb; border-style: solid; border-width: 1px; display: flex; justify-content: center; align-items: center;'>
+    <div style='height: {HTML_HEIGHT}px; width: 100%; border-radius: 8px; border-color: #e5e7eb; border-style: solid; border-width: 1px; display: flex; justify-content: center; align-items: center;'>
       <div style='text-align: center; font-size: 16px; color: #6b7280;'>
         <p style="color: #8d8d8d;">Welcome to Hunyuan3D!</p>
         <p style="color: #8d8d8d;">No mesh here.</p>
@@ -758,63 +960,7 @@ def main():
 
     SUPPORTED_FORMATS = ['glb', 'obj', 'ply', 'stl']
 
-    HAS_TEXTUREGEN = False
-    if not args.disable_tex:
-        try:
-            from hy3dgen.texgen import Hunyuan3DPaintPipeline
-            texgen_worker = Hunyuan3DPaintPipeline.from_pretrained(args.texgen_model_path)
-            HAS_TEXTUREGEN = True
-        except Exception as e:
-            print(f"Failed to load texture generator: {e}")
-
-    HAS_T2I = False
-    if args.enable_t23d:
-        from hy3dgen.text2image import HunyuanDiTPipeline
-        t2i_worker = HunyuanDiTPipeline('Tencent-Hunyuan/HunyuanDiT-v1.1-Diffusers-Distilled')
-        HAS_T2I = True
-
-    from hy3dgen.shapegen import FaceReducer, FloaterRemover, DegenerateFaceRemover, MeshSimplifier, \
-        Hunyuan3DDiTFlowMatchingPipeline
-    from hy3dgen.shapegen.pipelines import export_to_trimesh
-    from hy3dgen.rembg import BackgroundRemover
-
-    rmbg_worker = BackgroundRemover()
-    i23d_worker = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
-        args.model_path,
-        subfolder=args.subfolder,
-        use_safetensors=True,
-        device=args.device,
-    )
-    if args.enable_flashvdm:
-        mc_algo = 'mc' if args.device in ['cpu', 'mps'] else args.mc_algo
-        i23d_worker.enable_flashvdm(mc_algo=mc_algo)
-    if args.compile:
-        i23d_worker.compile()
-
-    floater_remove_worker = FloaterRemover()
-    degenerate_face_remove_worker = DegenerateFaceRemover()
-    face_reduce_worker = FaceReducer()
-  
-    profile = int(args.profile) 
-    replace_property_getter(i23d_worker, "_execution_device", lambda self : "cuda")
-    pipe = offload.extract_models("i23d_worker", i23d_worker)
-    if HAS_TEXTUREGEN:
-        pipe.update(offload.extract_models("texgen_worker", texgen_worker))
-        texgen_worker.models["multiview_model"].pipeline.vae.use_slicing = True
-    if HAS_T2I:
-        pipe.update(offload.extract_models("t2i_worker", t2i_worker))
-        
-    if profile < 5:
-        kwargs_offload = {"pinnedMemory": "i23d_worker/model"}
-    else:
-        kwargs_offload = {}
-        
-    if profile != 1 and profile != 3:
-        kwargs_offload["budgets"] = {"*": 2200}
-    
-    offload.default_verboseLevel = int(args.verbose)
-    offload.profile(pipe, profile_no=profile, verboseLevel=int(args.verbose), **kwargs_offload)
-
+    # --- Fast Initialization ---
     app = FastAPI()
 
     @app.get("/health")
@@ -822,8 +968,9 @@ def main():
         return {
             "status": "ok",
             "model": f"{args.model_path}/{args.subfolder}",
-            "texture": HAS_TEXTUREGEN,
-            "text2image": HAS_T2I,
+            "texture_loaded": texgen_worker is not None,
+            "shape_loaded": i23d_worker is not None,
+            "text2image_enabled": args.enable_t23d,
         }
 
     static_dir = Path(SAVE_DIR).absolute()
@@ -834,7 +981,7 @@ def main():
     if args.low_vram_mode:
         torch.cuda.empty_cache()
     demo = build_app()
-    app_gradio = gr.mount_gradio_app(app, demo, path="/")
+    launcher_app = gr.mount_gradio_app(app, demo, path="/")
 
     def open_browser():
         target_url = f"http://{args.host}:{args.port}"
@@ -842,7 +989,7 @@ def main():
         webbrowser.open_new_tab(target_url)
 
     Timer(1.5, open_browser).start()
-    uvicorn.run(app_gradio, host=args.host, port=args.port, workers=1)
+    uvicorn.run(launcher_app, host=args.host, port=args.port, workers=1)
 
 
 if __name__ == '__main__':
