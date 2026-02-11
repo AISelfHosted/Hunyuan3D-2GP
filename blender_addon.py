@@ -54,13 +54,13 @@ class Hunyuan3DProperties(bpy.types.PropertyGroup):
         name="Status Message",
         default=""
     )
-    # 添加图片路径属性
+    # Image path property
     image_path: StringProperty(
         name="Image",
         description="Select an image to upload",
         subtype='FILE_PATH'
     )
-    # 修改后的 octree_resolution 属性
+    # Octree resolution property
     octree_resolution: IntProperty(
         name="Octree Resolution",
         description="Octree resolution for the 3D generation",
@@ -82,7 +82,7 @@ class Hunyuan3DProperties(bpy.types.PropertyGroup):
         min=1.0,
         max=10.0
     )
-    # 添加 texture 属性
+    # Texture generation property
     texture: BoolProperty(
         name="Generate Texture",
         description="Whether to generate texture for the 3D model",
@@ -102,9 +102,9 @@ class Hunyuan3DOperator(bpy.types.Operator):
     octree_resolution = 256
     num_inference_steps = 20
     guidance_scale = 5.5
-    texture = False  # 新增属性
+    texture = False  # Texture flag
     selected_mesh_base64 = ""
-    selected_mesh = None  # 新增属性，用于存储选中的 mesh
+    selected_mesh = None  # Stores reference to the selected mesh object
 
     thread = None
     task_finished = False
@@ -122,7 +122,7 @@ class Hunyuan3DOperator(bpy.types.Operator):
         return {'PASS_THROUGH'}
 
     def invoke(self, context, event):
-        # 启动线程
+        # Start worker thread
         props = context.scene.gen_3d_props
         self.prompt = props.prompt
         self.api_url = props.api_url
@@ -130,13 +130,13 @@ class Hunyuan3DOperator(bpy.types.Operator):
         self.octree_resolution = props.octree_resolution
         self.num_inference_steps = props.num_inference_steps
         self.guidance_scale = props.guidance_scale
-        self.texture = props.texture  # 获取 texture 属性的值
+        self.texture = props.texture  # Get texture property value
 
         if self.prompt == "" and self.image_path == "":
             self.report({'WARNING'}, "Please enter some text or select an image first.")
             return {'FINISHED'}
 
-        # 保存选中的 mesh 对象引用
+        # Save reference to the selected mesh object
         for obj in context.selected_objects:
             if obj.type == 'MESH':
                 self.selected_mesh = obj
@@ -154,7 +154,7 @@ class Hunyuan3DOperator(bpy.types.Operator):
 
         props.is_processing = True
 
-        # 将相对路径转换为相对于 Blender 文件所在目录的绝对路径
+        # Convert relative path to absolute path relative to the Blender file directory
         blend_file_dir = os.path.dirname(bpy.data.filepath)
         self.report({'INFO'}, f"blend_file_dir {blend_file_dir}")
         self.report({'INFO'}, f"image_path {self.image_path}")
@@ -187,11 +187,11 @@ class Hunyuan3DOperator(bpy.types.Operator):
                 # Texturing the selected mesh
                 if self.image_path and os.path.exists(self.image_path):
                     self.report({'INFO'}, f"Post Texturing with Image")
-                    # 打开图片文件并以二进制模式读取
+                    # Open image file in binary mode
                     with open(self.image_path, "rb") as file:
-                        # 读取文件内容
+                        # Read file contents
                         image_data = file.read()
-                    # 对图片数据进行 Base64 编码
+                    # Base64 encode the image data
                     img_b64_str = base64.b64encode(image_data).decode()
                     response = requests.post(
                         f"{base_url}/generate",
@@ -201,7 +201,7 @@ class Hunyuan3DOperator(bpy.types.Operator):
                             "octree_resolution": self.octree_resolution,
                             "num_inference_steps": self.num_inference_steps,
                             "guidance_scale": self.guidance_scale,
-                            "texture": self.texture  # 传递 texture 参数
+                            "texture": self.texture  # Pass texture parameter
                         },
                     )
                 else:
@@ -214,7 +214,7 @@ class Hunyuan3DOperator(bpy.types.Operator):
                             "octree_resolution": self.octree_resolution,
                             "num_inference_steps": self.num_inference_steps,
                             "guidance_scale": self.guidance_scale,
-                            "texture": self.texture  # 传递 texture 参数
+                            "texture": self.texture  # Pass texture parameter
                         },
                     )
             else:
@@ -223,11 +223,11 @@ class Hunyuan3DOperator(bpy.types.Operator):
                         self.report({'ERROR'}, f"Image path does not exist {self.image_path}")
                         raise Exception(f'Image path does not exist {self.image_path}')
                     self.report({'INFO'}, f"Post Start Image to 3D")
-                    # 打开图片文件并以二进制模式读取
+                    # Open image file in binary mode
                     with open(self.image_path, "rb") as file:
-                        # 读取文件内容
+                        # Read file contents
                         image_data = file.read()
-                    # 对图片数据进行 Base64 编码
+                    # Base64 encode the image data
                     img_b64_str = base64.b64encode(image_data).decode()
                     response = requests.post(
                         f"{base_url}/generate",
@@ -236,7 +236,7 @@ class Hunyuan3DOperator(bpy.types.Operator):
                             "octree_resolution": self.octree_resolution,
                             "num_inference_steps": self.num_inference_steps,
                             "guidance_scale": self.guidance_scale,
-                            "texture": self.texture  # 传递 texture 参数
+                            "texture": self.texture  # Pass texture parameter
                         },
                     )
                 else:
@@ -248,7 +248,7 @@ class Hunyuan3DOperator(bpy.types.Operator):
                             "octree_resolution": self.octree_resolution,
                             "num_inference_steps": self.num_inference_steps,
                             "guidance_scale": self.guidance_scale,
-                            "texture": self.texture  # 传递 texture 参数
+                            "texture": self.texture  # Pass texture parameter
                         },
                     )
             self.report({'INFO'}, f"Post Done")
@@ -267,15 +267,15 @@ class Hunyuan3DOperator(bpy.types.Operator):
                 bpy.ops.import_scene.gltf(filepath=temp_file.name)
                 os.unlink(temp_file.name)
 
-                # 获取新导入的 mesh
+                # Get the newly imported mesh
                 new_obj = bpy.context.selected_objects[0] if bpy.context.selected_objects else None
                 if new_obj and self.selected_mesh and self.texture:
-                    # 应用选中 mesh 的位置、旋转和缩放
+                    # Apply the selected mesh's location, rotation, and scale
                     new_obj.location = self.selected_mesh.location
                     new_obj.rotation_euler = self.selected_mesh.rotation_euler
                     new_obj.scale = self.selected_mesh.scale
 
-                    # 隐藏原来的 mesh
+                    # Hide the original mesh
                     self.selected_mesh.hide_set(True)
                     self.selected_mesh.hide_render = True
 
@@ -303,13 +303,13 @@ class Hunyuan3DPanel(bpy.types.Panel):
 
         layout.prop(props, "api_url")
         layout.prop(props, "prompt")
-        # 添加图片选择器
+        # Image file selector
         layout.prop(props, "image_path")
-        # 添加新属性的 UI 元素
+        # Additional property UI elements
         layout.prop(props, "octree_resolution")
         layout.prop(props, "num_inference_steps")
         layout.prop(props, "guidance_scale")
-        # 添加 texture 属性的 UI 元素
+        # Texture property UI element
         layout.prop(props, "texture")
 
         row = layout.row()

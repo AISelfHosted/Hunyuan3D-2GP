@@ -62,8 +62,8 @@ from hy3dgen.texgen import Hunyuan3DPaintPipeline
 # Logging Setup
 # ---------------------------------------------------------------------------
 
-LOG_DIR = './logs'
-SAVE_DIR = 'gradio_cache'
+LOG_DIR = os.path.join(os.environ.get('XDG_STATE_HOME', os.path.expanduser('~/.local/state')), 'hy3dgen')
+SAVE_DIR = os.path.join(os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache')), 'hy3dgen', 'api')
 handler = None
 
 
@@ -162,6 +162,7 @@ class JobManager:
         self._active_count = 0
         self._lock = threading.Lock()
         self._completed_count = 0
+        self._semaphore = threading.Semaphore(max_concurrent)
 
     def create_job(self, params: dict) -> str:
         uid = str(uuid.uuid4())
@@ -376,9 +377,12 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# CORS restricted to localhost origins for security.
+# For remote/Docker usage, override via CORS_ORIGINS env var (comma-separated).
+_cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:*,http://127.0.0.1:*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in _cors_origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -450,7 +454,10 @@ async def send_job(request: GenerateRequest, _=Depends(verify_api_key)):
     uid = job_manager.create_job(params)
 
     def _process_job(job_uid, job_params):
+        job_manager._semaphore.acquire()
         try:
+            with job_manager._lock:
+                job_manager._active_count += 1
             job_manager.update_status(job_uid, JobStatus.processing)
             file_path = worker.generate(job_uid, job_params)
             job_manager.update_status(
@@ -467,6 +474,10 @@ async def send_job(request: GenerateRequest, _=Depends(verify_api_key)):
                 error=str(e),
                 completed_at=datetime.utcnow().isoformat(),
             )
+        finally:
+            with job_manager._lock:
+                job_manager._active_count -= 1
+            job_manager._semaphore.release()
 
     threading.Thread(target=_process_job, args=(uid, params), daemon=True).start()
     return JobSubmitResponse(uid=uid, status=JobStatus.queued)
@@ -553,6 +564,50 @@ async def health_check():
     )
 
 
+_start_time = time.time()
+
+
+@app.get(
+    "/metrics",
+    summary="Runtime Metrics",
+    description="Get runtime metrics: uptime, memory usage, GPU info, and job stats.",
+)
+async def metrics():
+    import psutil
+    process = psutil.Process(os.getpid())
+    mem_info = process.memory_info()
+
+    gpu_info = {}
+    try:
+        import torch
+        if torch.cuda.is_available():
+            gpu_info = {
+                "name": torch.cuda.get_device_name(0),
+                "memory_allocated_mb": round(torch.cuda.memory_allocated(0) / 1024**2, 1),
+                "memory_reserved_mb": round(torch.cuda.memory_reserved(0) / 1024**2, 1),
+                "memory_total_mb": round(torch.cuda.get_device_properties(0).total_mem / 1024**2, 1),
+            }
+    except Exception:
+        pass
+
+    return {
+        "uptime_seconds": round(time.time() - _start_time, 1),
+        "process": {
+            "pid": os.getpid(),
+            "rss_mb": round(mem_info.rss / 1024**2, 1),
+            "vms_mb": round(mem_info.vms / 1024**2, 1),
+            "threads": process.num_threads(),
+        },
+        "gpu": gpu_info,
+        "jobs": {
+            "queue_length": job_manager.queue_length if job_manager else 0,
+            "active": job_manager.active_count if job_manager else 0,
+            "completed": job_manager.completed_count if job_manager else 0,
+            "max_concurrent": job_manager.max_concurrent if job_manager else 0,
+        },
+    }
+
+
 @app.post(
     "/cleanup",
     summary="Trigger Cache Cleanup",
@@ -616,7 +671,7 @@ def setup_mmgp_offloading(worker_instance: ModelWorker, profile: int, verbose: i
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Hunyuan3D-2GP API Server")
-    parser.add_argument("--host", type=str, default="0.0.0.0", help="Server host")
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="Server host (use 0.0.0.0 for Docker/remote)")
     parser.add_argument("--port", type=int, default=8081, help="Server port")
     parser.add_argument("--model_path", type=str, default='tencent/Hunyuan3D-2mini',
                         help="Shape generation model path")
@@ -637,10 +692,12 @@ if __name__ == "__main__":
                         help="MMGP memory offloading profile (1-5)")
     parser.add_argument('--verbose', type=str, default="1",
                         help="Verbose level for MMGP")
-    parser.add_argument('--log_dir', type=str, default='./logs',
-                        help="Directory for log files")
-    parser.add_argument('--cache_dir', type=str, default='gradio_cache',
-                        help="Directory for cached/generated files")
+    parser.add_argument('--log_dir', type=str,
+                        default=os.path.join(os.environ.get('XDG_STATE_HOME', os.path.expanduser('~/.local/state')), 'hy3dgen'),
+                        help="Directory for log files (XDG-compliant default)")
+    parser.add_argument('--cache_dir', type=str,
+                        default=os.path.join(os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache')), 'hy3dgen', 'api'),
+                        help="Directory for cached/generated files (XDG-compliant default)")
     parser.add_argument('--turbo', action='store_true',
                         help="Use turbo subfolder for faster generation")
     parser.add_argument('--no_mmgp', action='store_true',
@@ -656,6 +713,15 @@ if __name__ == "__main__":
 
     # Configure auth
     API_KEY = args.api_key
+
+    # Non-blocking version check
+    try:
+        from hy3dgen.version import check_for_updates
+        update_info = check_for_updates()
+        if update_info:
+            logger.info(f"Update available: {update_info['latest']} → {update_info['url']}")
+    except Exception:
+        pass  # Never block startup
 
     # Setup turbo mode
     subfolder = args.subfolder

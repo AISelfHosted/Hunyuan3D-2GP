@@ -28,18 +28,42 @@ from fastapi.staticfiles import StaticFiles
 from mmgp import offload
 import uuid
 
-from hy3dgen.shapegen.utils import logger
+from hy3dgen.shapegen.utils import logger as _shapegen_logger
 
-MAX_SEED = 1e7
+import logging
+import logging.handlers
+
+# --- Unified logging for Gradio app ---
+_XDG_CACHE = os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache'))
+_XDG_STATE = os.environ.get('XDG_STATE_HOME', os.path.expanduser('~/.local/state'))
+_LOG_DIR = os.path.join(_XDG_STATE, 'hy3dgen')
+os.makedirs(_LOG_DIR, exist_ok=True)
+
+logger = logging.getLogger('hy3dgen.gradio')
+logger.setLevel(logging.INFO)
+_formatter = logging.Formatter(
+    fmt='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+)
+_console_h = logging.StreamHandler()
+_console_h.setFormatter(_formatter)
+logger.addHandler(_console_h)
+_file_h = logging.handlers.TimedRotatingFileHandler(
+    os.path.join(_LOG_DIR, 'gradio_app.log'), when='D', utc=True, encoding='UTF-8',
+)
+_file_h.setFormatter(_formatter)
+logger.addHandler(_file_h)
+
+MAX_SEED = int(1e7)
 
 
 def get_example_img_list():
-    print('Loading example img list ...')
+    logger.info('Loading example img list ...')
     return sorted(glob('./assets/example_images/**/*.png', recursive=True))
 
 
 def get_example_txt_list():
-    print('Loading example txt list ...')
+    logger.info('Loading example txt list ...')
     txt_list = list()
     for line in open('./assets/example_prompts.txt', encoding='utf-8'):
         txt_list.append(line.strip())
@@ -47,7 +71,7 @@ def get_example_txt_list():
 
 
 def get_example_mv_list():
-    print('Loading example mv list ...')
+    logger.info('Loading example mv list ...')
     mv_list = list()
     root = './assets/example_mv_images'
     for mv_dir in os.listdir(root):
@@ -65,20 +89,20 @@ def get_example_mv_list():
 def gen_save_folder(max_size=200):
     os.makedirs(SAVE_DIR, exist_ok=True)
 
-    # 获取所有文件夹路径
+    # Get all subdirectory paths
     dirs = [f for f in Path(SAVE_DIR).iterdir() if f.is_dir()]
 
-    # 如果文件夹数量超过 max_size，删除创建时间最久的文件夹
+    # If directory count exceeds max_size, delete the oldest one
     if len(dirs) >= max_size:
-        # 按创建时间排序，最久的排在前面
+        # Sort by creation time, oldest first
         oldest_dir = min(dirs, key=lambda x: x.stat().st_ctime)
         shutil.rmtree(oldest_dir)
-        print(f"Removed the oldest folder: {oldest_dir}")
+        logger.info(f"Removed the oldest folder: {oldest_dir}")
 
-    # 生成一个新的 uuid 文件夹名称
+    # Generate a new UUID folder name
     new_folder = os.path.join(SAVE_DIR, str(uuid.uuid4()))
     os.makedirs(new_folder, exist_ok=True)
-    print(f"Created new folder: {new_folder}")
+    logger.info(f"Created new folder: {new_folder}")
 
     return new_folder
 
@@ -167,7 +191,7 @@ def _gen_shape(
         if mv_image_right:
             image['right'] = mv_image_right
 
-    seed = int(randomize_seed_fn(seed, randomize_seed))
+    seed = int(randomize_seed_fn(int(seed), randomize_seed))
 
     octree_resolution = int(octree_resolution)
     if caption: print('prompt is', caption)
@@ -663,10 +687,11 @@ if __name__ == '__main__':
     parser.add_argument("--subfolder", type=str, default='hunyuan3d-dit-v2-mini')
     parser.add_argument("--texgen_model_path", type=str, default='tencent/Hunyuan3D-2')
     parser.add_argument('--port', type=int, default=8080)
-    parser.add_argument('--host', type=str, default='0.0.0.0')
+    parser.add_argument('--host', type=str, default='127.0.0.1')
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--mc_algo', type=str, default='dmc')
-    parser.add_argument('--cache-path', type=str, default='gradio_cache')
+    parser.add_argument('--cache-path', type=str,
+                        default=os.path.join(_XDG_CACHE, 'hy3dgen', 'gradio'))
     parser.add_argument('--enable_t23d', action='store_true')
     parser.add_argument('--profile', type=str, default="3")
     parser.add_argument('--verbose', type=str, default="1")
@@ -705,6 +730,15 @@ if __name__ == '__main__':
 
     SAVE_DIR = args.cache_path
     os.makedirs(SAVE_DIR, exist_ok=True)
+
+    # Non-blocking version check
+    try:
+        from hy3dgen.version import check_for_updates
+        update_info = check_for_updates()
+        if update_info:
+            logger.info(f"Update available: {update_info['latest']} → {update_info['url']}")
+    except Exception:
+        pass  # Never block startup
 
     CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
     MV_MODE = 'mv' in args.model_path
@@ -809,6 +843,16 @@ if __name__ == '__main__':
     # https://discuss.huggingface.co/t/how-to-serve-an-html-file/33921/2
     # create a FastAPI app
     app = FastAPI()
+
+    @app.get("/health")
+    async def health_check():
+        return {
+            "status": "ok",
+            "model": f"{args.model_path}/{args.subfolder}",
+            "texture": HAS_TEXTUREGEN,
+            "text2image": HAS_T2I,
+        }
+
     # create a static directory to store the static files
     static_dir = Path(SAVE_DIR).absolute()
     static_dir.mkdir(parents=True, exist_ok=True)
