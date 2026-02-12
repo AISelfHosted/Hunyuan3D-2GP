@@ -33,6 +33,7 @@ import uuid
 from hy3dgen.monitoring import get_system_metrics
 
 from hy3dgen.shapegen.utils import logger as _shapegen_logger
+from hy3dgen.shapegen.pipelines import export_to_trimesh
 
 import logging
 import logging.handlers
@@ -557,77 +558,105 @@ def build_app():
         font-family: 'Outfit', sans-serif !important;
     }
 
-    /* Glassmorphism effects */
-    .gr-panel, .gr-block, .gr-box {
-        background: rgba(17, 24, 39, 0.7) !important;
-        backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.05) !important;
-        border-radius: 12px !important;
-    }
-
-    .mv-image button .wrap {
-        font-size: 10px;
-    }
-
-    .mv-image .icon-wrap {
-        width: 20px;
-    }
-    
-    /* Branding Header */
-    .archeon-header {
-        background: linear-gradient(90deg, #6366f1 0%, #a855f7 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-weight: 800;
-        letter-spacing: -0.025em;
-    }
-    
-    .archeon-badge {
-        background: rgba(99, 102, 241, 0.1);
-        border: 1px solid rgba(99, 102, 241, 0.3);
-        color: #818cf8;
-        padding: 2px 8px;
-        border-radius: 6px;
-        font-size: 0.75rem;
-        margin-left: 10px;
-        vertical-align: middle;
-    }
-
-    /* Remove Gradio Branding */
-    footer {
-        display: none !important;
-    }
-    
-    .gr-button-secondary.api-link {
-        display: none !important;
-    }
-
-    /* Force tabs to same row */
-    .tabs > .tab-nav {
-        display: flex !important;
-        flex-wrap: nowrap !important;
-        overflow-x: auto !important;
-    }
-    
     .tabs > .tab-nav > button {
         white-space: nowrap !important;
         flex-shrink: 0 !important;
+    }
+
+    /* Standardized Borders & Cohesion */
+    .gr-panel, .gr-block, .gr-box, .gr-form {
+        background: rgba(17, 24, 39, 0.7) !important;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-radius: 12px !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    /* Premium Button Effects */
+    .gr-button-primary {
+        transition: all 0.3s ease !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+    }
+    
+    .gr-button-primary:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 0 15px rgba(99, 102, 241, 0.4) !important;
+        filter: brightness(1.1);
+    }
+
+    /* Tab Bar Refinement */
+    .tabs > .tab-nav {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+        margin-bottom: 15px !important;
+    }
+
+    .tabs > .tab-nav > button {
+        border-bottom: 2px solid transparent !important;
+        transition: all 0.2s ease !important;
+        color: #94a3b8 !important;
+    }
+
+    .tabs > .tab-nav > button.selected {
+        color: white !important;
+        border-bottom: 2px solid #6366f1 !important;
+        background: rgba(99, 102, 241, 0.05) !important;
+    }
+
+    /* Column Alignment & Fixed Height Panels */
+    #gen_mesh_panel, #export_mesh_panel {
+        height: 640px !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        overflow: hidden !important;
+    }
+    
+    /* Target only the middle and right column for min-height to allow left column to stay compact */
+    #tabs_output + div, #gallery + div {
+        min-height: 640px !important;
+    }
+    
+    #tab_img_gallery, #tab_txt_gallery, #tab_mv_gallery {
+        height: 540px !important;
+        overflow-y: auto !important;
+        padding-bottom: 20px;
+    }
+    
+    /* Force Gallery to hide pager and fill space */
+    .gr-samples-pager {
+        display: none !important;
+    }
+
+    .gr-samples {
+        height: 100% !important;
+    }
+
+    /* Clean left column spacing */
+    #left-column {
+        gap: 8px !important;
+        display: flex !important;
+        flex-direction: column !important;
+    }
+
+    #left-column > div {
+        margin-bottom: 0px !important;
+    }
+
+    #left-column .gr-group {
+        border: none !important;
+        background: transparent !important;
+        padding: 0 !important;
     }
     """
 
     with gr.Blocks(theme=archeon_theme, title='Archeon 3D Launcher', analytics_enabled=False, css=custom_css) as demo:
         with gr.Column(elem_id="header-container"):
             gr.HTML(f"""
-            <div style="text-align: center; margin-bottom: 0.5rem; margin-top: 0.5rem;">
-                <h1 style="font-size: 1.8rem; margin-bottom: 0.1rem;" class="archeon-header">ARCHEON 3D <span class="archeon-badge">SIDE CAR READY</span></h1>
-                <p style="color: #94a3b8; font-size: 0.9rem; max-width: 800px; margin: 0 auto;">
-                    Professional 3D Generation Pipeline. Powered by Tencent Hunyuan3D-2.0 & GPU-Poor optimizations.
-                </p>
+            <div style="text-align: center; margin-bottom: 0.2rem; margin-top: 0.2rem;">
+                <h1 style="font-size: 1.8rem; margin-bottom: 0px;" class="archeon-header">ARCHEON 3D</h1>
             </div>
             """)
 
         with gr.Row():
-            with gr.Column(scale=3):
+            with gr.Column(scale=4, elem_id="left-column"):
                 with gr.Tabs(selected='tab_img_prompt') as tabs_prompt:
                     with gr.Tab('Image Prompt', id='tab_img_prompt') as tab_ip:
                         image = gr.Image(label='Image', type='pil', image_mode='RGBA', height=300, sources=['upload', 'clipboard'])
@@ -647,17 +676,6 @@ def build_app():
                                                      min_width=100, elem_classes='mv-image', sources=['upload', 'clipboard'])
                             mv_image_right = gr.Image(label='Right', type='pil', image_mode='RGBA', height=140,
                                                       min_width=100, elem_classes='mv-image', sources=['upload', 'clipboard'])
-
-                with gr.Row():
-                    btn = gr.Button(value='Gen Shape', variant='primary', min_width=100)
-                    btn_all = gr.Button(value='Gen Textured Shape',
-                                        variant='primary',
-                                        visible=True,
-                                        min_width=100)
-
-                with gr.Group():
-                    file_out = gr.File(label="File", visible=False)
-                    file_out2 = gr.File(label="File", visible=False)
 
                 with gr.Tabs(selected='tab_options' if TURBO_MODE else 'tab_export'):
                     with gr.Tab("Options", id='tab_options', visible=TURBO_MODE):
@@ -704,7 +722,18 @@ def build_app():
                             file_export = gr.DownloadButton(label="Download", variant='primary',
                                                             interactive=False, min_width=100)
 
-            with gr.Column(scale=6):
+                with gr.Group():
+                    file_out = gr.File(label="File", visible=False)
+                    file_out2 = gr.File(label="File", visible=False)
+
+                with gr.Row():
+                    btn = gr.Button(value='Gen Shape', variant='primary', min_width=100)
+                    btn_all = gr.Button(value='Gen Textured Shape',
+                                        variant='primary',
+                                        visible=True,
+                                        min_width=100)
+
+            with gr.Column(scale=4, elem_id="tabs_output"):
                 with gr.Tabs(selected='gen_mesh_panel') as tabs_output:
                     with gr.Tab('Generated Mesh', id='gen_mesh_panel'):
                         html_gen_mesh = gr.HTML(HTML_OUTPUT_PLACEHOLDER, label='Output')
@@ -713,26 +742,26 @@ def build_app():
                     with gr.Tab('Mesh Statistic', id='stats_panel'):
                         stats = gr.Json({}, label='Mesh Stats')
 
-            with gr.Column(scale=3 if MV_MODE else 2):
+            with gr.Column(scale=4, elem_id="gallery"):
                 with gr.Tabs(selected='tab_img_gallery') as gallery:
                     with gr.Tab('Image to 3D Gallery', id='tab_img_gallery') as tab_gi:
                         with gr.Row():
                             gr.Examples(examples=example_is, inputs=[image],
-                                        label=None, examples_per_page=9)
+                                        label=None, examples_per_page=100)
 
                     with gr.Tab('Text to 3D Gallery', id='tab_txt_gallery') as tab_gt:
                         with gr.Row():
                             gr.Examples(examples=example_ts, inputs=[caption],
-                                        label=None, examples_per_page=9)
+                                        label=None, examples_per_page=100)
                     with gr.Tab('MultiView Gallery', id='tab_mv_gallery') as tab_mv_gal:
                         with gr.Row():
                             gr.Examples(examples=example_mvs,
                                         inputs=[mv_image_front, mv_image_back, mv_image_left, mv_image_right],
-                                        label=None, examples_per_page=4)
+                                        label=None, examples_per_page=100)
 
         gr.HTML(f"""
-        <div align="center" style="color: #64748b; margin-top: 0.5rem; border-top: 1px solid #1f2937; padding-top: 0.5rem; font-size: 0.8rem;">
-            Archeon 3D Engine &bull; Shape: {args.model_path}/{args.subfolder} &bull; Texture: {'Vanguard-H3D' if HAS_TEXTUREGEN else 'Disabled'}
+        <div align="center" style="color: #64748b; margin-top: 2rem; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 1rem; font-size: 0.8rem;">
+            Archeon 3D Engine &bull; Shape: {args.model_path}/{args.subfolder} &bull; Texture: {'Disabled' if args.disable_tex else 'Vanguard-H3D (Ready)'}
             <br>
             <span style="opacity: 0.5;">Based on Tencent Hunyuan3D-2.0 | Archeon Core Infrastructure</span>
         </div>
@@ -944,11 +973,11 @@ def main():
     MV_MODE = 'mv' in args.model_path
     TURBO_MODE = 'turbo' in args.subfolder
 
-    HTML_HEIGHT = 580
+    HTML_HEIGHT = 635
     HTML_WIDTH = 1000
 
     HTML_OUTPUT_PLACEHOLDER = f'''
-    <div style='height: {HTML_HEIGHT}px; width: 100%; border-radius: 8px; border-color: #e5e7eb; border-style: solid; border-width: 1px; display: flex; justify-content: center; align-items: center;'>
+    <div style='height: {HTML_HEIGHT}px; width: 100%; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: center; align-items: center;'>
       <div style='text-align: center; font-size: 16px; color: #6b7280;'>
         <p style="color: #8d8d8d;">Welcome to Hunyuan3D!</p>
         <p style="color: #8d8d8d;">No mesh here.</p>
