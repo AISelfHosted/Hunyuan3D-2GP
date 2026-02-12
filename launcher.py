@@ -614,9 +614,13 @@ def build_app():
         min-height: 640px !important;
     }
     
-    #tab_img_gallery, #tab_txt_gallery, #tab_mv_gallery {
-        height: 540px !important;
+    /* Limit Gallery Height to ~6 rows (matches 3D viewer) */
+    #gallery .gallery {
+        max-height: 540px !important;
         overflow-y: auto !important;
+    }
+    
+    #tab_img_gallery, #tab_txt_gallery, #tab_mv_gallery {
         padding-bottom: 20px;
     }
     
