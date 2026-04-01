@@ -34,8 +34,9 @@ class Multiview_Diffusion_Net():
             multiview_ckpt_path,
             custom_pipeline=custom_pipeline_path, torch_dtype=torch.float16)
 
-        pipeline.scheduler = EulerAncestralDiscreteScheduler.from_config(pipeline.scheduler.config,
-                                                                         timestep_spacing='trailing')
+        with torch.device('cpu'):
+            pipeline.scheduler = EulerAncestralDiscreteScheduler.from_config(pipeline.scheduler.config,
+                                                                             timestep_spacing='trailing')
 
         pipeline.set_progress_bar_config(disable=True)
         self.pipeline = pipeline #.to(self.device) # only for cosmetics and not display the warning 

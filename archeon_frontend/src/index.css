@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+@theme {
+  --color-archeon-bg: #0f172a;
+  --color-archeon-panel: #1e293b;
+  --color-archeon-primary: #3b82f6;
+}
+
+body {
+  @apply bg-archeon-bg text-gray-200 antialiased;
+}

@@ -54,34 +54,61 @@ class Hunyuan3DPaintPipeline:
     @classmethod
     def from_pretrained(cls, model_path):
         original_model_path = model_path
-        if not os.path.exists(model_path):
-            # try local path
-            base_dir = os.environ.get('HY3DGEN_MODELS', '~/.cache/hy3dgen')
-            model_path = os.path.expanduser(os.path.join(base_dir, model_path))
-
+        
+        # 1. Check if model_path is a valid local directory (direct path)
+        if os.path.exists(model_path):
             delight_model_path = os.path.join(model_path, 'hunyuan3d-delight-v2-0')
             multiview_model_path = os.path.join(model_path, 'hunyuan3d-paint-v2-0')
-
-            if not os.path.exists(delight_model_path) or not os.path.exists(multiview_model_path):
-                try:
-                    import huggingface_hub
-                    # download from huggingface
-                    model_path = huggingface_hub.snapshot_download(repo_id=original_model_path,
-                                                                   allow_patterns=["hunyuan3d-delight-v2-0/*"])
-                    model_path = huggingface_hub.snapshot_download(repo_id=original_model_path,
-                                                                   allow_patterns=["hunyuan3d-paint-v2-0/*"])
-                    delight_model_path = os.path.join(model_path, 'hunyuan3d-delight-v2-0')
-                    multiview_model_path = os.path.join(model_path, 'hunyuan3d-paint-v2-0')
-                    return cls(Hunyuan3DTexGenConfig(delight_model_path, multiview_model_path))
-                except ImportError:
-                    logger.warning(
-                        "You need to install HuggingFace Hub to load models from the hub."
-                    )
-                    raise RuntimeError(f"Model path {model_path} not found")
-            else:
+            if os.path.exists(delight_model_path) and os.path.exists(multiview_model_path):
+                logger.info(f"Loading texture models from local path: {model_path}")
                 return cls(Hunyuan3DTexGenConfig(delight_model_path, multiview_model_path))
 
-        raise FileNotFoundError(f"Model path {original_model_path} not found and we could not find it at huggingface")
+        # 2. Check XDG cache / HY3DGEN_MODELS env var
+        # Default to XDG cache if not set
+        base_dir = os.environ.get('HY3DGEN_MODELS', os.path.join(os.environ.get('XDG_CACHE_HOME', os.path.expanduser('~/.cache')), 'hy3dgen'))
+        cached_model_path = os.path.expanduser(os.path.join(base_dir, model_path))
+
+        delight_model_path = os.path.join(cached_model_path, 'hunyuan3d-delight-v2-0')
+        multiview_model_path = os.path.join(cached_model_path, 'hunyuan3d-paint-v2-0')
+
+        if os.path.exists(delight_model_path) and os.path.exists(multiview_model_path):
+            logger.info(f"Loading texture models from cache: {cached_model_path}")
+            return cls(Hunyuan3DTexGenConfig(delight_model_path, multiview_model_path))
+
+        # 3. Try downloading from HuggingFace
+        logger.info(f"Model not found locally or in cache. Attempting download from: {original_model_path}")
+        try:
+            import huggingface_hub
+            # Download delight model
+            huggingface_hub.snapshot_download(
+                repo_id=original_model_path,
+                allow_patterns=["hunyuan3d-delight-v2-0/*"],
+                local_dir=cached_model_path,
+                local_dir_use_symlinks=True
+            )
+            # Download paint model
+            huggingface_hub.snapshot_download(
+                repo_id=original_model_path,
+                allow_patterns=["hunyuan3d-paint-v2-0/*"],
+                local_dir=cached_model_path,
+                local_dir_use_symlinks=True
+            )
+            
+            # Re-verify paths after download
+            if os.path.exists(delight_model_path) and os.path.exists(multiview_model_path):
+                logger.info(f"Successfully downloaded texture models to: {cached_model_path}")
+                return cls(Hunyuan3DTexGenConfig(delight_model_path, multiview_model_path))
+            else:
+                raise RuntimeError(f"Download completed but model files are missing at {cached_model_path}")
+
+        except ImportError:
+            logger.error("huggingface_hub not installed. Cannot download models.")
+            raise ImportError("Please install huggingface_hub to download models automatically.")
+        except Exception as e:
+            logger.error(f"Failed to download model: {e}")
+            raise RuntimeError(f"Failed to download model {original_model_path}: {e}")
+
+        raise FileNotFoundError(f"Texture generation model not found at {original_model_path} or {cached_model_path}")
 
     def __init__(self, config):
         self.config = config

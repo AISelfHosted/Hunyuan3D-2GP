@@ -57,34 +57,34 @@ We systematically evaluate our models, showing that Hunyuan3D 2.0 outperforms pr
 including the open-source models and closed-source models in geometry details, condition alignment, texture quality, and
 e.t.c.
 
-## How to run the Gradio app
+## How to run the Archeon Launcher
 1) Follow the installation instructions below
 
 2) Enter either one of the commande lines in bash session
  
 To run the Hunyuan3D-2mini (low VRAM) image to 3D generator:
 ```bash
-python gradio_app.py 
+python launcher.py 
 ```
 
 To run the Hunyuan3D-2mv (multi views) image to 3D generator:
 ```bash
-python gradio_app.py --mv
+python launcher.py --mv
 ```
 
 To run the text to 3D generator (an extension of the mini generator):
 ```bash
-python gradio_app.py --enable_t23d
+python launcher.py --enable_t23d
 ```
 
 To run the original Hunyuan3D-2 image to 3D generator:
 ```bash
-python gradio_app.py --h2
+python launcher.py --h2
 ```
 
 To use the Turbo version of one specific model, add *--turbo*. For instance to run the turbo Hunyuan3D-2mv (multi views) image to 3D generator:
 ```bash
-python gradio_app.py --mv --turbo
+python launcher.py --mv --turbo
 ```
 
 
@@ -93,12 +93,12 @@ By default the memory profile assumes 9 GB of VRAM *(profile 3)*. If you have le
 
 To run the image to 3D generator with optimized memory management:
 ```bash
-python gradio_app.py --profile 3
+python launcher.py --profile 3
 
 ```
 To run the text to 3D generator with optimized memory management:
 ```bash
-python gradio_app.py --enable_t23d --profile 4
+python launcher.py --enable_t23d --profile 4
 
 ```
 
@@ -200,33 +200,44 @@ Hunyuan3D-2 Series
 You may follow the next steps to use Hunyuan3D 2.0 via:
 
 - [Code](#code-usage)
-- [Gradio App](#gradio-app)
+- [Archeon Launcher](#archeon-launcher)
 - [API Server](#api-server)
 - [Blender Addon](#blender-addon)
 - [Official Site](#official-site)
 
-### Install Requirements
-To use the application on Windows (without WSL) you will need to install Microsoft Visual Studio 2022 or later. If you get an error during the execution of onr of the *python setup.py* below you will need to set the path to the C++ compiler by running the following script (once you have located the installation path of VS Studio which may differ):
+### Installation
+
+#### Automated Installation (Recommended)
+
+Simply run the included installer script. It handles virtual environment creation, dependencies, and compiling the custom texture engine:
+
 ```bash
-"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\Tools\VsDevCmd" -arch=x64 
+python3 install.py
 ```
 
+After installation completes, activate the environment:
 
-In any case please make sure you have Python 3.10 installed, you may create a conda environnment: 
 ```bash
-conda create -n Hunyuan3D-2GP python==3.10.9 
+source .venv/bin/activate
 ```
-Then install the required libraries:
+
+#### Manual Installation
+
+If you prefer to manage your own environment (e.g., Conda):
+
 ```bash
+# 1. Create environment (Python 3.10 recommended)
+conda create -n Hunyuan3D-2GP python==3.10.9
+conda activate Hunyuan3D-2GP
+
+# 2. Install PyTorch (adjust CUDA version if needed)
 pip install torch==2.5.1 torchvision torchaudio --index-url https://download.pytorch.org/whl/test/cu124
-pip install -r requirements.txt
-# for texture
-cd hy3dgen/texgen/custom_rasterizer
-python3 setup.py install
-cd ../../..
-cd hy3dgen/texgen/differentiable_renderer
-python3 setup.py install
+
+# 3. Install the package (This automatically builds the C++ extensions)
+pip install -e .
 ```
+
+> **Note for Windows Users**: Ensure you have Visual Studio 2022 (with "Desktop development with C++") installed before running the installation, as `cl.exe` is required for compilation.
 
 ### Code Usage
 

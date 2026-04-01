@@ -42,3 +42,5 @@ onnxruntime
 #gevent
 #geventhttpclient
 pydantic==2.10.6
+psutil
+huggingface_hub
