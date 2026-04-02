@@ -36,7 +36,7 @@ def load_mesh(path):
 
 def reduce_face(
     mesh: pymeshlab.MeshSet,
-    max_facenum: int = 262144,
+    max_facenum: int = 524288,
     qualitythr: float = 1.0,
     preserveboundary: bool = True,
     boundaryweight: int = 3,
@@ -135,7 +135,7 @@ class FaceReducer:
     def __call__(
         self,
         mesh: Union[pymeshlab.MeshSet, trimesh.Trimesh, Latent2MeshOutput, str],
-        max_facenum: int = 262144,
+        max_facenum: int = 524288,
         qualitythr: float = 1.0,
         preserveboundary: bool = True,
         boundaryweight: int = 3,
