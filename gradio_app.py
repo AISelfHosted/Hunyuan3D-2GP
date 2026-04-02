@@ -242,7 +242,7 @@ def _gen_shape(
         output_type='mesh'
     )
     time_meta['shape generation'] = time.time() - start_time
-    logger.info("---Shape generation takes %s seconds ---" % (time.time() - start_time))
+    logger.info("---Shape generation took %s seconds ---" % (time.time() - start_time))
 
     tmp_start = time.time()
     mesh = export_to_trimesh(outputs)[0]
@@ -327,12 +327,12 @@ def generation_all(
     # tmp_time = time.time()
     # mesh = floater_remove_worker(mesh)
     # mesh = degenerate_face_remove_worker(mesh)
-    # logger.info("---Postprocessing takes %s seconds ---" % (time.time() - tmp_time))
+    # logger.info("---Postprocessing took %s seconds ---" % (time.time() - tmp_time))
     # stats['time']['postprocessing'] = time.time() - tmp_time
 
     tmp_time = time.time()
     mesh = face_reduce_worker(mesh)
-    logger.info("---Face Reduction takes %s seconds ---" % (time.time() - tmp_time))
+    logger.info("---Face Reduction took %s seconds ---" % (time.time() - tmp_time))
     stats['time']['face reduction'] = time.time() - tmp_time
 
     # Update texture generation config
@@ -346,7 +346,7 @@ def generation_all(
 
     tmp_time = time.time()
     textured_mesh = texgen_worker(mesh, image)
-    logger.info("---Texture Generation takes %s seconds ---" % (time.time() - tmp_time))
+    logger.info("---Texture Generation took %s seconds ---" % (time.time() - tmp_time))
     stats['time']['texture generation'] = time.time() - tmp_time
     stats['time']['total'] = time.time() - start_time_0
 
@@ -406,12 +406,12 @@ def shape_generation(
 
     tmp_time = time.time()
     mesh = face_reduce_worker(mesh)
-    logger.info("---Face Reduction takes %s seconds ---" % (time.time() - tmp_time))
+    logger.info("---Face Reduction took %s seconds ---" % (time.time() - tmp_time))
     stats['time']['face reduction'] = time.time() - tmp_time
 
     tmp_time = time.time()
     textured_mesh = texgen_worker(mesh, image)
-    logger.info("---Texture Generation takes %s seconds ---" % (time.time() - tmp_time))
+    logger.info("---Texture Generation took %s seconds ---" % (time.time() - tmp_time))
     stats['time']['texture generation'] = time.time() - tmp_time
     stats['time']['total'] = time.time() - start_time_0
 
@@ -603,7 +603,7 @@ def build_app():
                         with gr.Row():
                             cfg_scale = gr.Number(value=5.0, label='Guidance Scale', min_width=100,
                                                  info='How closely the AI follows your input image. Higher = more faithful to input but may look stiff. Lower = more creative but may drift from input. 5-7 is usually best.')
-                            num_chunks = gr.Slider(maximum=5000000, minimum=1000, value=8000,
+                            num_chunks = gr.Slider(maximum=500000, minimum=1000, value=8000,
                                                    label='Number of Chunks', min_width=100,
                                                    info='Memory optimization setting. Higher values use more VRAM but process faster. Lower if you get out-of-memory errors.')
                     with gr.Tab('Shape Options', id='tab_shape_options'):
